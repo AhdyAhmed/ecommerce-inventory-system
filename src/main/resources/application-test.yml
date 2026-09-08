@@ -1,0 +1,8 @@
+# Used for the "test" Spring profile. Datasource values here are placeholders and get
+# overridden dynamically once Testcontainers is wired in (Day 10 of the roadmap) via
+# @DynamicPropertySource. Left minimal on purpose for now.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true

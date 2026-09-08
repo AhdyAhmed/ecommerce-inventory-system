@@ -1,0 +1,23 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ecommerce_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ecommerce_db
+      POSTGRES_USER: ecommerce_user
+      POSTGRES_PASSWORD: ecommerce_pass
+    ports:
+      # Host 5433 -> container 5432. Host port is deliberately non-default so this
+      # doesn't collide with a local Postgres install already using 5432.
+      - "5433:5432"
+    volumes:
+      - ecommerce_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ecommerce_pgdata:
