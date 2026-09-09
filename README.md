@@ -5,8 +5,8 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 1 — project bootstrap. Domain model, business logic, tests,
-and docs land over the following days (see [Roadmap](#roadmap) below).
+**Status:** 🚧 Day 2 — domain model. Business logic, tests, and docs land over
+the following days (see [Roadmap](#roadmap) below).
 
 ## Tech Stack
 
@@ -70,6 +70,52 @@ docker-compose down
 
 Add `-v` to also drop the data volume: `docker-compose down -v`
 
+## Domain Model
+
+```mermaid
+erDiagram
+    USER ||--o{ ORDER : places
+    ORDER ||--o{ ORDER_ITEM : contains
+    PRODUCT ||--o{ ORDER_ITEM : "ordered as"
+    CATEGORY ||--o{ PRODUCT : categorizes
+    PRODUCT }o--o{ TAG : "tagged with"
+
+    USER {
+        Long id
+        string fullName
+        string email
+    }
+    ORDER {
+        Long id
+        OrderStatus status
+        BigDecimal totalAmount
+    }
+    ORDER_ITEM {
+        Long id
+        Integer quantity
+        BigDecimal unitPrice
+    }
+    PRODUCT {
+        Long id
+        string name
+        string sku
+        BigDecimal price
+        Integer stockQuantity
+        Long version
+    }
+    CATEGORY {
+        Long id
+        string name
+    }
+    TAG {
+        Long id
+        string name
+    }
+```
+
+Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
+`Category→Product`) and many-to-many (`Product↔Tag`).
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -82,7 +128,7 @@ Add `-v` to also drop the data volume: `docker-compose down -v`
 ## Roadmap
 
 - [x] **Day 1** — Project bootstrap, Postgres via Docker Compose, health check
-- [ ] **Day 2** — Core JPA entities and relationships
+- [x] **Day 2** — Core JPA entities and relationships
 - [ ] **Day 3** — Repositories and seed data
 - [ ] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
 - [ ] **Day 5** — Validation and global exception handling
@@ -106,3 +152,20 @@ Add `-v` to also drop the data volume: `docker-compose down -v`
   reconsidered (likely Flyway/Liquibase) as the schema stabilizes.
 - **Actuator included from Day 1:** gives an immediate, honest way to verify
   DB connectivity rather than eyeballing console logs.
+- **`BaseEntity` with id-only `equals`/`hashCode`:** shared across all
+  entities via `@MappedSuperclass`. Basing equality only on `id` (via
+  Lombok's `@EqualsAndHashCode.Include`) avoids two classic JPA foot-guns:
+  pulling lazy-loaded relationship fields into equality checks, and infinite
+  recursion on bidirectional relationships.
+- **`OrderItem.unitPrice` is a snapshot, not a live read of `Product.price`:**
+  if a product's price changes later, past orders should still reflect what
+  the customer actually paid.
+- **`Product.version` (optimistic locking) added now, used later:** costs
+  nothing to add today and avoids a schema migration when Project 3 actually
+  exercises it under concurrent stock updates.
+- **`Order.addItem()`/`removeItem()` helper methods:** keep both sides of the
+  bidirectional `Order ↔ OrderItem` relationship in sync in one place, rather
+  than relying on every call site to remember to set both ends.
+- **`Product ↔ Tag` many-to-many:** the one many-to-many relationship in the
+  domain, kept deliberately simple (just a name) so the focus stays on the
+  relationship mechanics rather than the domain concept.
