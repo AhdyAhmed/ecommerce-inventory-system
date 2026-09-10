@@ -5,8 +5,8 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 2 — domain model. Business logic, tests, and docs land over
-the following days (see [Roadmap](#roadmap) below).
+**Status:** 🚧 Day 3 — repositories and seed data. Business logic, tests, and
+docs land over the following days (see [Roadmap](#roadmap) below).
 
 ## Tech Stack
 
@@ -51,6 +51,17 @@ curl http://localhost:8080/actuator/health
 ```
 
 You should see `"status":"UP"` with a `db` component also reporting `UP`.
+
+On first startup, `DevDataSeeder` populates a small dataset (2 categories, 3
+tags, 4 products, 2 users, 2 orders) so there's something to query
+immediately. It's idempotent - it checks for existing data first, so
+restarting the app won't duplicate rows.
+
+**Peek at the seeded data (optional):**
+
+```bash
+docker exec -it ecommerce_postgres psql -U ecommerce_user -d ecommerce_db -c "SELECT name, sku, price, stock_quantity FROM products;"
+```
 
 **4. Run tests:**
 
@@ -129,7 +140,7 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 
 - [x] **Day 1** — Project bootstrap, Postgres via Docker Compose, health check
 - [x] **Day 2** — Core JPA entities and relationships
-- [ ] **Day 3** — Repositories and seed data
+- [x] **Day 3** — Repositories and seed data
 - [ ] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
 - [ ] **Day 5** — Validation and global exception handling
 - [ ] **Day 6** — Order creation business logic
@@ -169,3 +180,8 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 - **`Product ↔ Tag` many-to-many:** the one many-to-many relationship in the
   domain, kept deliberately simple (just a name) so the focus stays on the
   relationship mechanics rather than the domain concept.
+- **`DevDataSeeder` guarded by profile + row count:** using a
+  `CommandLineRunner` instead of `data.sql` because it exercises the actual
+  entity relationships (via `Order.addItem()`) rather than hand-written
+  insert statements that could drift from the schema. Restricted to the
+  `dev` profile and made idempotent so it's safe to leave running.
