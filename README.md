@@ -5,8 +5,8 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 3 — repositories and seed data. Business logic, tests, and
-docs land over the following days (see [Roadmap](#roadmap) below).
+**Status:** 🚧 Day 4 — Product CRUD API. Validation, business logic, tests,
+and docs land over the following days (see [Roadmap](#roadmap) below).
 
 ## Tech Stack
 
@@ -127,6 +127,44 @@ erDiagram
 Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 `Category→Product`) and many-to-many (`Product↔Tag`).
 
+## API
+
+Product CRUD is live end-to-end (Controller → Service → Repository, DTOs
+only - the `Product` entity is never returned or accepted directly).
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/products` | Create a product |
+| `GET` | `/api/products` | List all products |
+| `GET` | `/api/products/{id}` | Get one product |
+| `PUT` | `/api/products/{id}` | Replace a product |
+| `DELETE` | `/api/products/{id}` | Delete a product |
+
+> ⚠️ No request validation or global error handling yet (that's Day 5) - a
+> bad request or unknown ID currently surfaces as a raw 500, not a clean 400
+> or 404. Don't read too much into the error responses until then.
+
+**Try it** (category id `1` is "Electronics" from the seed data):
+
+```bash
+curl -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -d '{
+        "name": "Mechanical Keyboard",
+        "description": "Hot-swappable, 75% layout",
+        "sku": "ELEC-KEYBOARD-001",
+        "price": 129.00,
+        "stockQuantity": 30,
+        "categoryId": 1,
+        "tagIds": []
+      }'
+```
+
+```bash
+curl http://localhost:8080/api/products
+curl http://localhost:8080/api/products/1
+```
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -141,7 +179,7 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 - [x] **Day 1** — Project bootstrap, Postgres via Docker Compose, health check
 - [x] **Day 2** — Core JPA entities and relationships
 - [x] **Day 3** — Repositories and seed data
-- [ ] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
+- [x] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
 - [ ] **Day 5** — Validation and global exception handling
 - [ ] **Day 6** — Order creation business logic
 - [ ] **Day 7** — Custom queries, pagination, sorting
@@ -185,3 +223,14 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
   entity relationships (via `Order.addItem()`) rather than hand-written
   insert statements that could drift from the schema. Restricted to the
   `dev` profile and made idempotent so it's safe to leave running.
+- **Hand-written `ProductMapper` over MapStruct/ModelMapper:** the
+  entity↔DTO mapping is simple enough that a generated mapper wouldn't save
+  much, and an explicit mapper keeps the boundary readable in one place.
+- **Service returns DTOs, never entities:** `ProductService` methods return
+  `ProductResponseDto`, not `Product`. The controller never touches the
+  entity at all, which is what actually enforces "don't leak JPA entities
+  over the wire" rather than just conventionally avoiding it.
+- **`ResourceNotFoundException` introduced before its handler:** the service
+  layer's contract (throw when something's missing) is written correctly
+  from Day 4, even though the `@ControllerAdvice` that turns it into a 404
+  doesn't land until Day 5.
