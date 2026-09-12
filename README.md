@@ -5,8 +5,9 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 4 — Product CRUD API. Validation, business logic, tests,
-and docs land over the following days (see [Roadmap](#roadmap) below).
+**Status:** 🚧 Day 5 — validation and global exception handling. Business
+logic, tests, and docs land over the following days (see
+[Roadmap](#roadmap) below).
 
 ## Tech Stack
 
@@ -144,6 +145,24 @@ only - the `Product` entity is never returned or accepted directly).
 > bad request or unknown ID currently surfaces as a raw 500, not a clean 400
 > or 404. Don't read too much into the error responses until then.
 
+Requests are validated with Bean Validation, and every error - validation
+failure, missing resource, malformed JSON, or anything unexpected - comes
+back in the same shape via a global `@RestControllerAdvice`:
+
+```json
+{
+  "timestamp": "2026-09-12T10:15:30.123Z",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Validation failed",
+  "path": "/api/products",
+  "fieldErrors": {
+    "price": "Price must be greater than zero",
+    "sku": "SKU must contain only uppercase letters, digits, and single hyphens (e.g. ELEC-LAPTOP-001)"
+  }
+}
+```
+
 **Try it** (category id `1` is "Electronics" from the seed data):
 
 ```bash
@@ -165,6 +184,18 @@ curl http://localhost:8080/api/products
 curl http://localhost:8080/api/products/1
 ```
 
+**See the error handling in action:**
+
+```bash
+# unknown product id -> 404
+curl http://localhost:8080/api/products/999
+
+# invalid payload -> 400 with fieldErrors
+curl -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name": "", "sku": "bad sku!", "price": -5, "stockQuantity": -1, "categoryId": null}'
+```
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -180,7 +211,7 @@ curl http://localhost:8080/api/products/1
 - [x] **Day 2** — Core JPA entities and relationships
 - [x] **Day 3** — Repositories and seed data
 - [x] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
-- [ ] **Day 5** — Validation and global exception handling
+- [x] **Day 5** — Validation and global exception handling
 - [ ] **Day 6** — Order creation business logic
 - [ ] **Day 7** — Custom queries, pagination, sorting
 - [ ] **Day 8** — Dynamic filtering with JPA Specifications
@@ -231,6 +262,24 @@ curl http://localhost:8080/api/products/1
   entity at all, which is what actually enforces "don't leak JPA entities
   over the wire" rather than just conventionally avoiding it.
 - **`ResourceNotFoundException` introduced before its handler:** the service
-  layer's contract (throw when something's missing) is written correctly
+  layer's contract (throw when something's missing) was written correctly
   from Day 4, even though the `@ControllerAdvice` that turns it into a 404
-  doesn't land until Day 5.
+  didn't land until Day 5.
+- **Custom `@ValidSku` validator instead of a bare `@Pattern`:** a
+  `@Pattern`-only approach would give a generic "must match regex" message
+  when it fails. A custom `ConstraintValidator` lets the error message
+  explain the actual convention (uppercase, digits, hyphens) instead - the
+  kind of thing that matters when this is the message a teammate sees.
+  It also deliberately treats blank values as valid, leaving "is it present
+  at all" to `@NotBlank`, so the two annotations report distinct problems
+  instead of one confusing combined one.
+- **One `GlobalExceptionHandler`, one `ErrorResponse` shape:** every error
+  path - validation failure, missing resource, malformed JSON, unexpected
+  exception - returns the same JSON shape. A client only needs to learn one
+  error format, and `fieldErrors` is omitted from the JSON entirely (via
+  `@JsonInclude(NON_NULL)`) when there isn't any, rather than showing up as
+  `null`.
+- **Unexpected exceptions are logged server-side before being masked from
+  the client:** the `Exception.class` fallback handler logs the full stack
+  trace but returns a generic "unexpected error" message - enough detail to
+  debug from the logs, without leaking internals to the API consumer.

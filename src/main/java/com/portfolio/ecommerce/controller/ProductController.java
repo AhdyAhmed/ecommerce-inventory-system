@@ -3,6 +3,7 @@ package com.portfolio.ecommerce.controller;
 import com.portfolio.ecommerce.dto.product.ProductRequestDto;
 import com.portfolio.ecommerce.dto.product.ProductResponseDto;
 import com.portfolio.ecommerce.service.ProductService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -30,7 +31,7 @@ public class ProductController {
     private final ProductService productService;
 
     @PostMapping
-    public ResponseEntity<ProductResponseDto> create(@RequestBody ProductRequestDto request) {
+    public ResponseEntity<ProductResponseDto> create(@Valid @RequestBody ProductRequestDto request) {
         ProductResponseDto created = productService.create(request);
         return ResponseEntity.created(URI.create("/api/products/" + created.getId())).body(created);
     }
@@ -46,7 +47,7 @@ public class ProductController {
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<ProductResponseDto> update(@PathVariable Long id, @RequestBody ProductRequestDto request) {
+    public ResponseEntity<ProductResponseDto> update(@PathVariable Long id, @Valid @RequestBody ProductRequestDto request) {
         return ResponseEntity.ok(productService.update(id, request));
     }
 
