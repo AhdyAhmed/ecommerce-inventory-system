@@ -5,8 +5,8 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 5 — validation and global exception handling. Business
-logic, tests, and docs land over the following days (see
+**Status:** 🚧 Day 6 — order creation business logic. Custom queries,
+filtering, tests, and docs land over the following days (see
 [Roadmap](#roadmap) below).
 
 ## Tech Stack
@@ -133,6 +133,8 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 Product CRUD is live end-to-end (Controller → Service → Repository, DTOs
 only - the `Product` entity is never returned or accepted directly).
 
+### Products
+
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/products` | Create a product |
@@ -140,10 +142,6 @@ only - the `Product` entity is never returned or accepted directly).
 | `GET` | `/api/products/{id}` | Get one product |
 | `PUT` | `/api/products/{id}` | Replace a product |
 | `DELETE` | `/api/products/{id}` | Delete a product |
-
-> ⚠️ No request validation or global error handling yet (that's Day 5) - a
-> bad request or unknown ID currently surfaces as a raw 500, not a clean 400
-> or 404. Don't read too much into the error responses until then.
 
 Requests are validated with Bean Validation, and every error - validation
 failure, missing resource, malformed JSON, or anything unexpected - comes
@@ -196,6 +194,49 @@ curl -X POST http://localhost:8080/api/products \
   -d '{"name": "", "sku": "bad sku!", "price": -5, "stockQuantity": -1, "categoryId": null}'
 ```
 
+### Orders
+
+| Method | Path | Description |
+|---|---|---|
+| `POST` | `/api/orders` | Place an order (decrements stock) |
+| `GET` | `/api/orders` | List all orders |
+| `GET` | `/api/orders/{id}` | Get one order |
+| `POST` | `/api/orders/{id}/confirm` | PENDING → CONFIRMED |
+| `POST` | `/api/orders/{id}/cancel` | → CANCELLED, restocks items |
+
+Placing an order resolves each `productId`, checks stock, decrements it, and
+snapshots the current price into `unitPrice` on each line item - the whole
+operation is one transaction, so a stock failure on item 3 of 5 rolls back
+the decrements already made for items 1 and 2.
+
+**Try it** (user id `1` is Alice, product id `1` is the seeded laptop):
+
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{
+        "userId": 1,
+        "items": [
+          {"productId": 1, "quantity": 1},
+          {"productId": 3, "quantity": 2}
+        ]
+      }'
+```
+
+```bash
+curl http://localhost:8080/api/orders/1
+curl -X POST http://localhost:8080/api/orders/1/confirm
+curl -X POST http://localhost:8080/api/orders/1/cancel   # restocks both line items
+```
+
+Ordering more than the available stock returns a `409 Conflict`:
+
+```bash
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1, "items": [{"productId": 1, "quantity": 9999}]}'
+```
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -212,7 +253,7 @@ curl -X POST http://localhost:8080/api/products \
 - [x] **Day 3** — Repositories and seed data
 - [x] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
 - [x] **Day 5** — Validation and global exception handling
-- [ ] **Day 6** — Order creation business logic
+- [x] **Day 6** — Order creation business logic
 - [ ] **Day 7** — Custom queries, pagination, sorting
 - [ ] **Day 8** — Dynamic filtering with JPA Specifications
 - [ ] **Day 9** — Unit tests (JUnit5 + Mockito)
@@ -283,3 +324,20 @@ curl -X POST http://localhost:8080/api/products \
   the client:** the `Exception.class` fallback handler logs the full stack
   trace but returns a generic "unexpected error" message - enough detail to
   debug from the logs, without leaking internals to the API consumer.
+- **`OrderService.create()` is one transaction covering every line item:**
+  stock is decremented per item as the loop runs, using plain setters on
+  managed entities rather than explicit `save()` calls (JPA's dirty checking
+  flushes them at commit). If any item fails - unknown product, insufficient
+  stock - the whole transaction rolls back, including stock already
+  decremented for earlier items in the same request. Partial orders aren't a
+  safe thing to expose as an API.
+- **`InsufficientStockException` / `InvalidOrderStateException` → 409, not
+  400 or 404:** both describe a well-formed request that can't be satisfied
+  right now (not enough stock; wrong order status for this transition) -
+  semantically a conflict with current state, distinct from bad input or a
+  missing resource.
+- **`cancel()` restocks; `confirm()` doesn't touch stock:** cancelling an
+  order releases the inventory it reserved, so it's allowed from `PENDING`
+  or `CONFIRMED` but not from `CANCELLED` again (would double-restock).
+  Confirming is a pure status transition since stock was already reserved
+  at order creation time.
