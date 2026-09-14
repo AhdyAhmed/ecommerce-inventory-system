@@ -5,7 +5,7 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 6 — order creation business logic. Custom queries,
+**Status:** 🚧 Day 7 — custom queries, pagination, and sorting. Dynamic
 filtering, tests, and docs land over the following days (see
 [Roadmap](#roadmap) below).
 
@@ -138,8 +138,9 @@ only - the `Product` entity is never returned or accepted directly).
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/products` | Create a product |
-| `GET` | `/api/products` | List all products |
+| `GET` | `/api/products` | List products (paginated) |
 | `GET` | `/api/products/{id}` | Get one product |
+| `GET` | `/api/products/low-stock` | Products at or below a stock threshold |
 | `PUT` | `/api/products/{id}` | Replace a product |
 | `DELETE` | `/api/products/{id}` | Delete a product |
 
@@ -182,6 +183,31 @@ curl http://localhost:8080/api/products
 curl http://localhost:8080/api/products/1
 ```
 
+`GET /api/products` is paginated - `page`, `size`, and `sort` are all query
+params handled automatically by Spring Data (`sort` accepts
+`field,direction`, e.g. `sort=price,desc`):
+
+```bash
+curl "http://localhost:8080/api/products?page=0&size=2&sort=price,desc"
+```
+
+```json
+{
+  "content": [ { "id": 1, "name": "14-inch Laptop", "price": 999.99, "...": "..." } ],
+  "pageNumber": 0,
+  "pageSize": 2,
+  "totalElements": 5,
+  "totalPages": 3,
+  "last": false
+}
+```
+
+Low-stock products (default threshold `10`, override with `?threshold=`):
+
+```bash
+curl "http://localhost:8080/api/products/low-stock?threshold=30"
+```
+
 **See the error handling in action:**
 
 ```bash
@@ -199,8 +225,10 @@ curl -X POST http://localhost:8080/api/products \
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `/api/orders` | Place an order (decrements stock) |
-| `GET` | `/api/orders` | List all orders |
+| `GET` | `/api/orders` | List orders (paginated) |
 | `GET` | `/api/orders/{id}` | Get one order |
+| `GET` | `/api/orders/by-user/{email}` | An account's orders, paginated, newest first |
+| `GET` | `/api/orders/search` | Orders for an email within a date range |
 | `POST` | `/api/orders/{id}/confirm` | PENDING → CONFIRMED |
 | `POST` | `/api/orders/{id}/cancel` | → CANCELLED, restocks items |
 
@@ -237,6 +265,18 @@ curl -i -X POST http://localhost:8080/api/orders \
   -d '{"userId": 1, "items": [{"productId": 1, "quantity": 9999}]}'
 ```
 
+A user's order history, paginated, newest first:
+
+```bash
+curl "http://localhost:8080/api/orders/by-user/alice@example.com?page=0&size=5"
+```
+
+Orders for a user within a date range (ISO-8601 timestamps):
+
+```bash
+curl "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z"
+```
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -254,7 +294,7 @@ curl -i -X POST http://localhost:8080/api/orders \
 - [x] **Day 4** — Product CRUD (Controller → Service → Repository, DTOs)
 - [x] **Day 5** — Validation and global exception handling
 - [x] **Day 6** — Order creation business logic
-- [ ] **Day 7** — Custom queries, pagination, sorting
+- [x] **Day 7** — Custom queries, pagination, sorting
 - [ ] **Day 8** — Dynamic filtering with JPA Specifications
 - [ ] **Day 9** — Unit tests (JUnit5 + Mockito)
 - [ ] **Day 10** — Integration tests (Testcontainers)
@@ -341,3 +381,19 @@ curl -i -X POST http://localhost:8080/api/orders \
   or `CONFIRMED` but not from `CANCELLED` again (would double-restock).
   Confirming is a pure status transition since stock was already reserved
   at order creation time.
+- **`PageResponse<T>` instead of returning `Page<T>` directly:** Spring
+  Data's own docs warn against serializing `PageImpl` as-is - it isn't
+  designed as a stable wire format. Wrapping it keeps the JSON shape
+  (`content`, `pageNumber`, `pageSize`, `totalElements`, `totalPages`,
+  `last`) something this project controls.
+- **`SELECT DISTINCT` on the order date-range query:** fetch-joining a
+  collection (`o.items`) returns one row per (order, item) pair, so without
+  `DISTINCT` an order with 3 items would show up 3 times in the result list.
+  This only affects collection fetch joins - the `ManyToOne` fetch join in
+  `findLowStock` doesn't have the problem, since a to-one join can't
+  multiply rows.
+- **`@Query` used where a derived method name would get awkward:** simple
+  lookups (`findByEmail`, `findBySku`) stay as derived queries - they're
+  clearer as method names than as JPQL. The date-range order query and the
+  low-stock product query switch to `@Query` because they need fetch joins
+  and ordering control that a method name can't express cleanly.
