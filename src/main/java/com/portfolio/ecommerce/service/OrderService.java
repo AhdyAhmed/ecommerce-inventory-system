@@ -2,7 +2,10 @@ package com.portfolio.ecommerce.service;
 
 import com.portfolio.ecommerce.dto.order.OrderRequestDto;
 import com.portfolio.ecommerce.dto.order.OrderResponseDto;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
+import java.time.Instant;
 import java.util.List;
 
 public interface OrderService {
@@ -11,7 +14,11 @@ public interface OrderService {
 
     OrderResponseDto getById(Long id);
 
-    List<OrderResponseDto> getAll();
+    Page<OrderResponseDto> getAll(Pageable pageable);
+
+    Page<OrderResponseDto> getByUserEmail(String email, Pageable pageable);
+
+    List<OrderResponseDto> getByUserEmailAndDateRange(String email, Instant from, Instant to);
 
     OrderResponseDto confirm(Long id);
 

@@ -17,10 +17,13 @@ import com.portfolio.ecommerce.repository.ProductRepository;
 import com.portfolio.ecommerce.repository.UserRepository;
 import com.portfolio.ecommerce.service.OrderService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -94,8 +97,20 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    public List<OrderResponseDto> getAll() {
-        return orderRepository.findAll().stream()
+    public Page<OrderResponseDto> getAll(Pageable pageable) {
+        return orderRepository.findAll(pageable)
+                .map(orderMapper::toResponseDto);
+    }
+
+    @Override
+    public Page<OrderResponseDto> getByUserEmail(String email, Pageable pageable) {
+        return orderRepository.findByUser_Email(email, pageable)
+                .map(orderMapper::toResponseDto);
+    }
+
+    @Override
+    public List<OrderResponseDto> getByUserEmailAndDateRange(String email, Instant from, Instant to) {
+        return orderRepository.findByUserEmailAndDateRange(email, from, to).stream()
                 .map(orderMapper::toResponseDto)
                 .toList();
     }
