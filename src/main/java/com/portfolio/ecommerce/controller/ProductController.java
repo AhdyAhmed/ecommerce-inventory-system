@@ -3,6 +3,7 @@ package com.portfolio.ecommerce.controller;
 import com.portfolio.ecommerce.dto.common.PageResponse;
 import com.portfolio.ecommerce.dto.product.ProductRequestDto;
 import com.portfolio.ecommerce.dto.product.ProductResponseDto;
+import com.portfolio.ecommerce.dto.product.ProductSearchCriteria;
 import com.portfolio.ecommerce.service.ProductService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +12,7 @@ import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -53,6 +55,21 @@ public class ProductController {
     public ResponseEntity<PageResponse<ProductResponseDto>> getAll(
             @PageableDefault(size = 20, sort = "id") Pageable pageable) {
         return ResponseEntity.ok(PageResponse.from(productService.getAll(pageable)));
+    }
+
+    /**
+     * Dynamic, combinable filtering - any subset of name/categoryId/minPrice/
+     * maxPrice/inStock may be supplied, e.g.
+     * GET /api/products/search?categoryId=1&minPrice=20&maxPrice=200&inStock=true
+     * Kept as a distinct endpoint from the plain {@code GET /api/products}
+     * above rather than overloading it, so "list everything" and "filter"
+     * stay two clearly separate, independently cacheable concerns.
+     */
+    @GetMapping("/search")
+    public ResponseEntity<PageResponse<ProductResponseDto>> search(
+            @ModelAttribute ProductSearchCriteria criteria,
+            @PageableDefault(size = 20, sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(PageResponse.from(productService.search(criteria, pageable)));
     }
 
     @GetMapping("/low-stock")

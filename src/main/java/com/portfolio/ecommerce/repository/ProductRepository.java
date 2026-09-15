@@ -2,13 +2,20 @@ package com.portfolio.ecommerce.repository;
 
 import com.portfolio.ecommerce.domain.Product;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
 
-public interface ProductRepository extends JpaRepository<Product, Long> {
+/**
+ * {@code JpaSpecificationExecutor} adds {@code findAll(Specification, Pageable)}
+ * (among others) on top of the usual {@code JpaRepository} methods, which is
+ * what lets {@link com.portfolio.ecommerce.specification.ProductSpecification}
+ * be used for the combinable {@code /products/search} filtering.
+ */
+public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
 
     Optional<Product> findBySku(String sku);
 

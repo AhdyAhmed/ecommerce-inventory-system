@@ -5,15 +5,18 @@ import com.portfolio.ecommerce.domain.Product;
 import com.portfolio.ecommerce.domain.Tag;
 import com.portfolio.ecommerce.dto.product.ProductRequestDto;
 import com.portfolio.ecommerce.dto.product.ProductResponseDto;
+import com.portfolio.ecommerce.dto.product.ProductSearchCriteria;
 import com.portfolio.ecommerce.exception.ResourceNotFoundException;
 import com.portfolio.ecommerce.mapper.ProductMapper;
 import com.portfolio.ecommerce.repository.CategoryRepository;
 import com.portfolio.ecommerce.repository.ProductRepository;
 import com.portfolio.ecommerce.repository.TagRepository;
 import com.portfolio.ecommerce.service.ProductService;
+import com.portfolio.ecommerce.specification.ProductSpecification;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,6 +55,13 @@ public class ProductServiceImpl implements ProductService {
     @Override
     public Page<ProductResponseDto> getAll(Pageable pageable) {
         return productRepository.findAll(pageable)
+                .map(productMapper::toResponseDto);
+    }
+
+    @Override
+    public Page<ProductResponseDto> search(ProductSearchCriteria criteria, Pageable pageable) {
+        Specification<Product> spec = ProductSpecification.fromCriteria(criteria);
+        return productRepository.findAll(spec, pageable)
                 .map(productMapper::toResponseDto);
     }
 

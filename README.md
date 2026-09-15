@@ -5,9 +5,10 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 7 — custom queries, pagination, and sorting. Dynamic
-filtering, tests, and docs land over the following days (see
-[Roadmap](#roadmap) below).
+**Status:** 🚧 Day 8 — dynamic product filtering via JPA Specifications.
+Tests and docs land over the following days (see [Roadmap](#roadmap)
+below). To confirm the whole app works at this point, not just today's
+feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -140,6 +141,7 @@ only - the `Product` entity is never returned or accepted directly).
 | `POST` | `/api/products` | Create a product |
 | `GET` | `/api/products` | List products (paginated) |
 | `GET` | `/api/products/{id}` | Get one product |
+| `GET` | `/api/products/search` | Dynamic, combinable filtering (name, category, price range, in-stock), paginated |
 | `GET` | `/api/products/low-stock` | Products at or below a stock threshold |
 | `PUT` | `/api/products/{id}` | Replace a product |
 | `DELETE` | `/api/products/{id}` | Delete a product |
@@ -200,6 +202,17 @@ curl "http://localhost:8080/api/products?page=0&size=2&sort=price,desc"
   "totalPages": 3,
   "last": false
 }
+```
+
+**Dynamic filtering** - any subset of `name`, `categoryId`, `minPrice`,
+`maxPrice`, `inStock` can be combined; omitted params simply aren't applied:
+
+```bash
+# electronics between $50-$500 that are in stock, cheapest first
+curl "http://localhost:8080/api/products/search?categoryId=1&minPrice=50&maxPrice=500&inStock=true&sort=price,asc"
+
+# case-insensitive name search on its own
+curl "http://localhost:8080/api/products/search?name=laptop"
 ```
 
 Low-stock products (default threshold `10`, override with `?threshold=`):
@@ -277,6 +290,135 @@ Orders for a user within a date range (ISO-8601 timestamps):
 curl "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z"
 ```
 
+## Verification Checklist (run this to confirm the whole app, not just today's feature)
+
+This section is cumulative and updated every day - it's meant to prove the
+*entire* app works end-to-end at its current state, not just whatever
+landed most recently. Run top to bottom after starting Postgres and the app
+(see [Running Locally](#running-locally)); every step includes what a
+correct result looks like so a failure is obvious.
+
+**0. Preconditions**
+
+```bash
+docker-compose up -d
+mvn spring-boot:run &      # or run it in its own terminal
+sleep 5
+curl http://localhost:8080/actuator/health
+```
+Expect: `{"status":"UP", ...}` with a `db` component also `UP`. If this
+fails, nothing below will work - check `docker-compose ps` first.
+
+**1. Seed data is present** (2 categories, 3 tags, 4 products, 2 users, 2 orders)
+
+```bash
+curl -s http://localhost:8080/api/products | python3 -m json.tool | grep totalElements
+```
+Expect: `"totalElements": 4` (before you add anything below).
+
+**2. Product CRUD** (Day 4/5)
+
+```bash
+# create -> 201 with Location header and a body containing the new id
+curl -i -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Mechanical Keyboard","sku":"ELEC-KEYBOARD-001","price":129.00,"stockQuantity":30,"categoryId":1,"tagIds":[]}'
+
+# read it back by id -> 200, same data
+curl http://localhost:8080/api/products/5
+
+# validation failure -> 400 with fieldErrors (Day 5)
+curl -i -X POST http://localhost:8080/api/products \
+  -H "Content-Type: application/json" \
+  -d '{"name":"","sku":"bad sku!","price":-5,"stockQuantity":-1,"categoryId":null}'
+
+# not found -> 404
+curl -i http://localhost:8080/api/products/999
+
+# update -> 200 with changed fields
+curl -i -X PUT http://localhost:8080/api/products/5 \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Mechanical Keyboard v2","sku":"ELEC-KEYBOARD-001","price":139.00,"stockQuantity":25,"categoryId":1,"tagIds":[]}'
+
+# delete -> 204, then a re-read -> 404
+curl -i -X DELETE http://localhost:8080/api/products/5
+curl -i http://localhost:8080/api/products/5
+```
+
+**3. Pagination and sorting** (Day 7)
+
+```bash
+curl -s "http://localhost:8080/api/products?page=0&size=2&sort=price,desc" | python3 -m json.tool
+```
+Expect: `content` has 2 items, ordered by price descending; `pageSize: 2`.
+
+**4. Low-stock query** (Day 7)
+
+```bash
+curl -s "http://localhost:8080/api/products/low-stock?threshold=30" | python3 -m json.tool
+```
+Expect: only products with `stockQuantity <= 30`, ordered ascending by stock.
+
+**5. Dynamic filtering / Specifications** (Day 8)
+
+```bash
+# combined filters
+curl -s "http://localhost:8080/api/products/search?categoryId=1&minPrice=50&maxPrice=500&inStock=true" | python3 -m json.tool
+
+# name filter alone
+curl -s "http://localhost:8080/api/products/search?name=laptop" | python3 -m json.tool
+
+# no filters at all -> behaves like plain GET /api/products
+curl -s "http://localhost:8080/api/products/search" | python3 -m json.tool
+```
+Expect: each call returns only products matching the supplied filters;
+omitted filters don't narrow the result at all; the no-filter call returns
+everything (paginated).
+
+**6. Order creation, stock decrement, transactional rollback** (Day 6)
+
+```bash
+# happy path -> 201, totalAmount computed, stock decremented on the products used
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"items":[{"productId":1,"quantity":1},{"productId":3,"quantity":2}]}'
+
+# insufficient stock -> 409, and confirm nothing was partially decremented
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId":1,"items":[{"productId":1,"quantity":9999}]}'
+curl http://localhost:8080/api/products/1   # stockQuantity unchanged by the failed attempt
+```
+
+**7. Order state transitions** (Day 6)
+
+```bash
+curl -i -X POST http://localhost:8080/api/orders/3/confirm   # PENDING -> CONFIRMED, 200
+curl -i -X POST http://localhost:8080/api/orders/3/cancel    # -> CANCELLED, 200, restocks items
+curl -i -X POST http://localhost:8080/api/orders/3/cancel    # already cancelled -> 409
+```
+
+**8. Order queries** (Day 7)
+
+```bash
+curl -s "http://localhost:8080/api/orders/by-user/alice@example.com?page=0&size=5" | python3 -m json.tool
+curl -s "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z" | python3 -m json.tool
+```
+Expect: only Alice's orders, newest first for #8's first call; only orders
+inside the date range for the second.
+
+**9. Automated tests**
+
+```bash
+mvn test
+```
+> As of Day 8 this only runs the Day-1 context-load smoke test - there's no
+> unit or integration suite yet. That's Day 9 (Mockito unit tests) and Day
+> 10 (Testcontainers integration tests); once those land, this step is
+> where they get exercised, and this checklist will note what they cover.
+
+---
+
 ## Configuration
 
 | Variable | Where | Default |
@@ -295,7 +437,7 @@ curl "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-
 - [x] **Day 5** — Validation and global exception handling
 - [x] **Day 6** — Order creation business logic
 - [x] **Day 7** — Custom queries, pagination, sorting
-- [ ] **Day 8** — Dynamic filtering with JPA Specifications
+- [x] **Day 8** — Dynamic filtering with JPA Specifications
 - [ ] **Day 9** — Unit tests (JUnit5 + Mockito)
 - [ ] **Day 10** — Integration tests (Testcontainers)
 - [ ] **Day 11** — OpenAPI / Swagger docs
@@ -392,6 +534,14 @@ curl "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-
   This only affects collection fetch joins - the `ManyToOne` fetch join in
   `findLowStock` doesn't have the problem, since a to-one join can't
   multiply rows.
+- **`ProductSpecification` methods return a `null` predicate when their own
+  filter is absent, instead of branching in the service layer:** Spring
+  Data's `Specification.and(...)` composition treats a `null` predicate as
+  a no-op and drops it from the final query. That's what makes the filters
+  genuinely combinable - `/products/search` with zero params degrades to
+  "match everything," and any subset of `name`/`categoryId`/`minPrice`/
+  `maxPrice`/`inStock` combines without an `if` per filter or a combinatorial
+  explosion of hand-written queries.
 - **`@Query` used where a derived method name would get awkward:** simple
   lookups (`findByEmail`, `findBySku`) stay as derived queries - they're
   clearer as method names than as JPQL. The date-range order query and the

@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    # NOTE: host port is 5433, not the Postgres default 5432, because docker-compose.yml
+    # maps the container's 5432 -> host 5433. This avoids clashing with a local Postgres
+    # install already listening on 5432. See docker-compose.yml.
+    url: jdbc:postgresql://localhost:5433/ecommerce_db
+    username: ecommerce_user
+    password: ecommerce_pass
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    open-in-view: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    org.hibernate.SQL: debug
+    com.portfolio.ecommerce: debug
