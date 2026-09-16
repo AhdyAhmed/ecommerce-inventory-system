@@ -1,5 +1,0 @@
-spring:
-  application:
-    name: ecommerce-inventory-system
-  profiles:
-    active: dev

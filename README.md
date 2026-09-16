@@ -5,10 +5,10 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 8 — dynamic product filtering via JPA Specifications.
-Tests and docs land over the following days (see [Roadmap](#roadmap)
-below). To confirm the whole app works at this point, not just today's
-feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
+**Status:** 🚧 Day 9 — Mockito unit tests for the service layer.
+Integration tests and docs land over the following days (see
+[Roadmap](#roadmap) below). To confirm the whole app works at this point,
+not just today's feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -16,7 +16,7 @@ feature, run the [Verification Checklist](#verification-checklist-run-this-to-co
 - Spring Boot 3.3.4 (Web, Data JPA, Validation, Actuator)
 - PostgreSQL 16
 - Docker Compose (local Postgres)
-- JUnit 5 / Mockito / Testcontainers (from Day 9)
+- JUnit 5 / Mockito (service-layer unit tests) / Testcontainers (from Day 10)
 - Maven
 
 ## Prerequisites
@@ -407,15 +407,42 @@ curl -s "http://localhost:8080/api/orders/search?email=alice@example.com&from=20
 Expect: only Alice's orders, newest first for #8's first call; only orders
 inside the date range for the second.
 
-**9. Automated tests**
+**9. Automated tests** (Day 9)
 
 ```bash
 mvn test
 ```
-> As of Day 8 this only runs the Day-1 context-load smoke test - there's no
-> unit or integration suite yet. That's Day 9 (Mockito unit tests) and Day
-> 10 (Testcontainers integration tests); once those land, this step is
-> where they get exercised, and this checklist will note what they cover.
+Expect: `Tests run: <N>, Failures: 0, Errors: 0` and `BUILD SUCCESS`. As of
+Day 9 this runs:
+
+- `ProductServiceImplTest` - `create` (happy path with no tags, happy path
+  resolving multiple tags, category-not-found, one-tag-missing-fails-the-
+  whole-request), `getById` (found / not-found), `getAll` and `search`
+  (verifying the repository call is delegated to with the right
+  `Pageable`/`Specification`), `getLowStock`, `update` (happy path /
+  product-not-found), `delete` (happy path / not-found - never calls
+  `deleteById` when the product doesn't exist).
+- `OrderServiceImplTest` - `create` (happy path asserting the exact
+  computed total and per-product stock decrement, user-not-found,
+  product-not-found, **insufficient stock** with the exact requested/
+  available numbers in the message, and a case confirming a later item's
+  stock failure still leaves `save()` uncalled), `confirm` (PENDING ->
+  CONFIRMED happy path / rejecting a non-PENDING order), `cancel` (happy
+  path asserting stock is restored per item / rejecting an already-
+  cancelled order without double-restocking), `getByUserEmailAndDateRange`
+  delegation.
+- `SkuFormatValidatorTest` - the Day 5 custom `@ValidSku` regex, parameterized
+  over well-formed SKUs, several malformed shapes (lowercase, spaces, double
+  hyphen, leading/trailing hyphen, underscore, punctuation), and blank/null
+  input (valid here on purpose - presence is `@NotBlank`'s job, not this
+  validator's).
+
+All of the above are pure Mockito unit tests - repositories and mappers are
+mocked, nothing touches a real database. That's deliberate: it's what makes
+these fast enough to run on every change, and it's exactly why Day 10 adds a
+*separate* Testcontainers integration suite against a real Postgres, to
+catch what mocking can't (real cascades, real constraint violations, real
+transactional rollback under an actual insufficient-stock failure).
 
 ---
 
@@ -438,7 +465,7 @@ mvn test
 - [x] **Day 6** — Order creation business logic
 - [x] **Day 7** — Custom queries, pagination, sorting
 - [x] **Day 8** — Dynamic filtering with JPA Specifications
-- [ ] **Day 9** — Unit tests (JUnit5 + Mockito)
+- [x] **Day 9** — Unit tests (JUnit5 + Mockito)
 - [ ] **Day 10** — Integration tests (Testcontainers)
 - [ ] **Day 11** — OpenAPI / Swagger docs
 - [ ] **Day 12** — Edge cases and structured logging
@@ -448,6 +475,28 @@ mvn test
 
 ## Design Decisions
 
+- **Constructed services with `new ProductServiceImpl(...)` in test `setUp()`
+  instead of `@InjectMocks`:** both work here since the constructor is a
+  simple `@RequiredArgsConstructor` over the mocked fields, but being
+  explicit means a future field reorder or an added constructor param fails
+  loudly at compile time instead of silently leaving a mock unwired.
+- **`search()`'s unit test asserts `findAll(any(Specification.class), eq(pageable))`
+  rather than inspecting the Specification's predicate:** a `Specification`
+  is a lambda; there's no clean way to assert "this lambda filters by name"
+  without actually running it against data, which is what
+  `ProductSpecification.fromCriteria(...)`'s own correctness depends on
+  Hibernate to evaluate. Asserting *that a Specification was passed through
+  to the repository* is the right-sized claim for a mocked-repository unit
+  test; whether the generated SQL actually filters correctly is verified for
+  real once Day 10's Testcontainers suite runs it against Postgres.
+- **Insufficient-stock rollback is asserted differently at the unit vs.
+  integration level:** `OrderServiceImplTest` can only prove "the exception
+  is thrown and `save()` is never called" - with mocked repositories there's
+  no real transaction, so there's nothing to actually roll back. Whether an
+  in-progress stock decrement on an *earlier* item in the same request
+  really reverts in the database when a *later* item fails is a claim only
+  a real transactional test against real Postgres can make - that's what
+  Day 10 adds.
 - **Postgres on a non-default port (5433):** avoids clashing with a local
   Postgres install on the default 5432, without needing per-developer config
   overrides.
