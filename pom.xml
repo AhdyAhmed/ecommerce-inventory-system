@@ -74,6 +74,30 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!--
+            Testcontainers: spins up a real, disposable Postgres instance for
+            integration tests (Day 10), instead of mocks or an in-memory DB
+            like H2 that doesn't actually behave like Postgres. Versions for
+            all three come from Spring Boot's own dependency management
+            (spring-boot-starter-parent), same as every other dependency in
+            this file - no version needed here.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

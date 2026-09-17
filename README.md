@@ -5,10 +5,10 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 9 — Mockito unit tests for the service layer.
-Integration tests and docs land over the following days (see
-[Roadmap](#roadmap) below). To confirm the whole app works at this point,
-not just today's feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
+**Status:** 🚧 Day 10 — Testcontainers integration tests against a real
+Postgres. Docs land over the following days (see [Roadmap](#roadmap)
+below). To confirm the whole app works at this point, not just today's
+feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -16,7 +16,7 @@ not just today's feature, run the [Verification Checklist](#verification-checkli
 - Spring Boot 3.3.4 (Web, Data JPA, Validation, Actuator)
 - PostgreSQL 16
 - Docker Compose (local Postgres)
-- JUnit 5 / Mockito (service-layer unit tests) / Testcontainers (from Day 10)
+- JUnit 5 / Mockito (service-layer unit tests) / Testcontainers (full-stack integration tests against real Postgres)
 - Maven
 
 ## Prerequisites
@@ -407,42 +407,48 @@ curl -s "http://localhost:8080/api/orders/search?email=alice@example.com&from=20
 Expect: only Alice's orders, newest first for #8's first call; only orders
 inside the date range for the second.
 
-**9. Automated tests** (Day 9)
+**9. Automated tests** (Day 9 unit tests + Day 10 integration tests)
 
 ```bash
 mvn test
 ```
-Expect: `Tests run: <N>, Failures: 0, Errors: 0` and `BUILD SUCCESS`. As of
-Day 9 this runs:
+Requires a running Docker daemon (Testcontainers pulls and starts its own
+disposable `postgres:16-alpine` container automatically - you do **not**
+need `docker-compose up -d` for this step; that's only for running the app
+itself). Expect: `Tests run: <N>, Failures: 0, Errors: 0` and `BUILD SUCCESS`.
 
-- `ProductServiceImplTest` - `create` (happy path with no tags, happy path
-  resolving multiple tags, category-not-found, one-tag-missing-fails-the-
-  whole-request), `getById` (found / not-found), `getAll` and `search`
-  (verifying the repository call is delegated to with the right
-  `Pageable`/`Specification`), `getLowStock`, `update` (happy path /
-  product-not-found), `delete` (happy path / not-found - never calls
-  `deleteById` when the product doesn't exist).
-- `OrderServiceImplTest` - `create` (happy path asserting the exact
-  computed total and per-product stock decrement, user-not-found,
-  product-not-found, **insufficient stock** with the exact requested/
-  available numbers in the message, and a case confirming a later item's
-  stock failure still leaves `save()` uncalled), `confirm` (PENDING ->
-  CONFIRMED happy path / rejecting a non-PENDING order), `cancel` (happy
-  path asserting stock is restored per item / rejecting an already-
-  cancelled order without double-restocking), `getByUserEmailAndDateRange`
-  delegation.
-- `SkuFormatValidatorTest` - the Day 5 custom `@ValidSku` regex, parameterized
-  over well-formed SKUs, several malformed shapes (lowercase, spaces, double
-  hyphen, leading/trailing hyphen, underscore, punctuation), and blank/null
-  input (valid here on purpose - presence is `@NotBlank`'s job, not this
-  validator's).
+Unit tests (mocked repositories, no database - see Day 9 in the Roadmap for
+the full list): `ProductServiceImplTest`, `OrderServiceImplTest`,
+`SkuFormatValidatorTest`.
 
-All of the above are pure Mockito unit tests - repositories and mappers are
-mocked, nothing touches a real database. That's deliberate: it's what makes
-these fast enough to run on every change, and it's exactly why Day 10 adds a
-*separate* Testcontainers integration suite against a real Postgres, to
-catch what mocking can't (real cascades, real constraint violations, real
-transactional rollback under an actual insufficient-stock failure).
+Integration tests (real Spring context, real MockMvc HTTP dispatch through
+the actual controllers, real Postgres via Testcontainers):
+
+- `EcommerceInventorySystemApplicationTests` - the original Day-1 context-load
+  smoke test, now running against Testcontainers instead of a manually
+  started docker-compose stack.
+- `ProductIntegrationTest` - full CRUD lifecycle (create -> read -> update ->
+  delete -> re-read returns 404, with each step also verified directly
+  against `ProductRepository`, not just the HTTP response), the validation
+  error response shape over real HTTP (`fieldErrors` keyed by field, one
+  entry per violation), and an unknown `categoryId` returning 404 rather than
+  400 or 500.
+- `OrderIntegrationTest` - order creation with stock really decremented in
+  Postgres, insufficient stock returning 409 with stock left untouched, an
+  unknown user returning 404, and the confirm/cancel state machine
+  restoring stock for real on cancel. The one test this whole day exists
+  for: when an order has two items and the *second* one fails its stock
+  check, the *first* item's already-decremented stock is asserted to be
+  back to its original value afterward - proving the `@Transactional`
+  order-creation method really rolls back everything it did, against a real
+  database. Day 9's mocked-repository test could only prove the exception
+  was thrown and `save()` was never called; it had no real transaction to
+  roll back and so could never make this specific claim.
+
+All of the above run in the same `mvn test` invocation - JUnit doesn't
+distinguish "unit" from "integration" here by naming convention alone, it's
+by which base class each test extends (`AbstractIntegrationTest` and its
+Testcontainers/`@Transactional` setup, or nothing at all).
 
 ---
 
@@ -466,7 +472,7 @@ transactional rollback under an actual insufficient-stock failure).
 - [x] **Day 7** — Custom queries, pagination, sorting
 - [x] **Day 8** — Dynamic filtering with JPA Specifications
 - [x] **Day 9** — Unit tests (JUnit5 + Mockito)
-- [ ] **Day 10** — Integration tests (Testcontainers)
+- [x] **Day 10** — Integration tests (Testcontainers)
 - [ ] **Day 11** — OpenAPI / Swagger docs
 - [ ] **Day 12** — Edge cases and structured logging
 - [ ] **Day 13** — Architecture diagram + full README
@@ -475,6 +481,38 @@ transactional rollback under an actual insufficient-stock failure).
 
 ## Design Decisions
 
+- **Testcontainers over H2 for integration tests:** H2 is fast and needs no
+  Docker, but it isn't Postgres - different dialect quirks, different
+  constraint-violation behavior, different handling of things like the
+  `@Version` optimistic-locking column this project already has on
+  `Product`. A green test suite against H2 can still hide a bug that only
+  shows up against real Postgres. Testcontainers costs a Docker daemon and
+  a few extra seconds of container startup; in exchange, "the tests pass"
+  and "the app works against Postgres" become the same claim.
+- **One `static` Postgres container shared by every integration test class
+  (`AbstractIntegrationTest`), not one per class:** Testcontainers calls
+  this the singleton container pattern. Starting a fresh container per test
+  class would multiply total suite runtime for no real isolation benefit,
+  since `@Transactional` (below) already gives each *test method* a clean
+  slate without needing a clean *container*.
+- **`@Transactional` on the integration test base class for per-test
+  rollback, instead of manual cleanup or `@Sql` scripts:** Spring's test
+  support wraps each test method in a transaction and rolls it back when the
+  method finishes, and a service method's own `@Transactional` simply joins
+  that surrounding transaction rather than opening a second one. That gives
+  every test a clean database with zero hand-written teardown code - and
+  it's also why the rollback assertions in `OrderIntegrationTest` are
+  trustworthy: the same transactional join behavior that cleans up after
+  the test is what makes "does the whole order-creation method really roll
+  back on a mid-loop failure" a question real Postgres can answer, not just
+  a mock.
+- **`ProductIntegrationTest` and `OrderIntegrationTest` re-query the
+  repository directly after each MockMvc call, instead of trusting the HTTP
+  response alone:** the HTTP response only proves the controller *said* the
+  right thing. Re-reading `stockQuantity` from `ProductRepository` after an
+  order request proves the database actually has the right thing, which is
+  the entire reason Day 10 exists rather than just writing more Day-9-style
+  unit tests.
 - **Constructed services with `new ProductServiceImpl(...)` in test `setUp()`
   instead of `@InjectMocks`:** both work here since the constructor is a
   simple `@RequiredArgsConstructor` over the mocked fields, but being

@@ -1,6 +1,8 @@
-# Used for the "test" Spring profile. Datasource values here are placeholders and get
-# overridden dynamically once Testcontainers is wired in (Day 10 of the roadmap) via
-# @DynamicPropertySource. Left minimal on purpose for now.
+# Used for the "test" Spring profile (Day 10: Testcontainers integration
+# tests). No datasource block here on purpose - AbstractIntegrationTest's
+# @ServiceConnection annotation on the PostgreSQLContainer injects the
+# container's JDBC URL/credentials automatically, so hardcoding placeholder
+# values here would just be dead config that nothing reads.
 spring:
   jpa:
     hibernate:

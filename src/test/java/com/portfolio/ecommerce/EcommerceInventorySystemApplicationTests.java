@@ -1,19 +1,19 @@
 package com.portfolio.ecommerce;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
 
 /**
  * Day 1 smoke test: confirms the Spring context wires up correctly and the
- * application can connect to Postgres.
+ * application can connect to a database.
  *
- * Requires `docker-compose up -d` to be running first (see README), since the
- * "dev" profile points at the real Postgres instance on localhost:5433.
- * From Day 10 onward this gets replaced by Testcontainers-backed integration
- * tests that don't depend on anything running locally.
+ * Originally required `docker-compose up -d` against the real dev Postgres
+ * on localhost:5433. As of Day 10, it extends {@link AbstractIntegrationTest}
+ * instead, so it runs against a disposable Testcontainers-managed Postgres
+ * the same way every other integration test does - `mvn test` now needs
+ * nothing running locally beyond a Docker daemon, not a manually-started
+ * docker-compose stack.
  */
-@SpringBootTest
-class EcommerceInventorySystemApplicationTests {
+class EcommerceInventorySystemApplicationTests extends AbstractIntegrationTest {
 
     @Test
     void contextLoads() {
