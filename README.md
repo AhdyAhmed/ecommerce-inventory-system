@@ -5,10 +5,11 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 10 — Testcontainers integration tests against a real
-Postgres. Docs land over the following days (see [Roadmap](#roadmap)
-below). To confirm the whole app works at this point, not just today's
-feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
+**Status:** 🚧 Day 11 — OpenAPI/Swagger documentation. Once running, browse
+the full interactive API docs at http://localhost:8080/swagger-ui.html.
+More docs and a final polish pass land over the following days (see
+[Roadmap](#roadmap) below). To confirm the whole app works at this point,
+not just today's feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -17,6 +18,7 @@ feature, run the [Verification Checklist](#verification-checklist-run-this-to-co
 - PostgreSQL 16
 - Docker Compose (local Postgres)
 - JUnit 5 / Mockito (service-layer unit tests) / Testcontainers (full-stack integration tests against real Postgres)
+- springdoc-openapi (OpenAPI 3 + Swagger UI)
 - Maven
 
 ## Prerequisites
@@ -450,6 +452,24 @@ distinguish "unit" from "integration" here by naming convention alone, it's
 by which base class each test extends (`AbstractIntegrationTest` and its
 Testcontainers/`@Transactional` setup, or nothing at all).
 
+**10. API documentation** (Day 11)
+
+```bash
+curl -s http://localhost:8080/v3/api-docs | python3 -m json.tool | head -20
+```
+Expect a valid OpenAPI 3 JSON document (`"openapi": "3.x.x"`, an `info`
+block with this project's title/description, and a `paths` object listing
+every endpoint under `/api/products/**` and `/api/orders/**`).
+
+Then open **http://localhost:8080/swagger-ui.html** in a browser and check:
+- Two tags, **Products** and **Orders**, each with its description
+- Every endpoint has a summary and, for anything beyond a plain 200/201,
+  a documented set of alternate response codes (400/404/409) with an
+  `ErrorResponse` schema and example
+- "Try it out" on `POST /api/products` and `POST /api/orders` shows a
+  pre-filled example request body (from the `@Schema(example = ...)`
+  annotations on the DTOs) rather than an empty or all-null template
+
 ---
 
 ## Configuration
@@ -473,13 +493,36 @@ Testcontainers/`@Transactional` setup, or nothing at all).
 - [x] **Day 8** — Dynamic filtering with JPA Specifications
 - [x] **Day 9** — Unit tests (JUnit5 + Mockito)
 - [x] **Day 10** — Integration tests (Testcontainers)
-- [ ] **Day 11** — OpenAPI / Swagger docs
+- [x] **Day 11** — OpenAPI / Swagger docs
 - [ ] **Day 12** — Edge cases and structured logging
 - [ ] **Day 13** — Architecture diagram + full README
 - [ ] **Day 14** — Refactor pass
 - [ ] **Day 15** — Final polish, `v1.0` tag
 
 ## Design Decisions
+
+- **springdoc-openapi pinned to the explicit `2.6.0` version, not left to
+  the parent POM:** every other dependency in `pom.xml` relies on
+  `spring-boot-starter-parent`'s version management, but springdoc's 3.x
+  line targets Spring Boot 4, which this project isn't on. Leaving the
+  version off here (the pattern used everywhere else) would either fail to
+  resolve or silently pull in an incompatible major version depending on
+  how the BOM resolves it - explicit is safer than consistent, in this one
+  case.
+- **Error responses (`@ApiResponses` for 400/404/409) are hand-written on
+  each controller method, not inferred:** springdoc generates the 2xx
+  response from the method's return type automatically, but it has no way
+  to see that `ProductServiceImpl.getById(...)` can throw
+  `ResourceNotFoundException` - that exception is thrown several layers
+  below the controller and only becomes an HTTP 404 in
+  `GlobalExceptionHandler`, which springdoc doesn't trace through. Writing
+  these by hand is what makes Swagger UI's documented response codes match
+  what the API can actually return, instead of just showing the happy path.
+- **`@ParameterObject` on `Pageable` and `ProductSearchCriteria` instead of
+  leaving them undocumented:** without it, springdoc has no visibility into
+  a multi-field query-param object's individual fields, so `page`/`size`/
+  `sort` and the five search filters would show up as one opaque,
+  unexpandable parameter in Swagger UI instead of one documented field each.
 
 - **Testcontainers over H2 for integration tests:** H2 is fast and needs no
   Docker, but it isn't Postgres - different dialect quirks, different

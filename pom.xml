@@ -68,6 +68,20 @@
             <optional>true</optional>
         </dependency>
 
+        <!--
+            OpenAPI 3 spec + Swagger UI, generated from the controllers/DTOs
+            at runtime (Day 11). Pinned to the 2.8.x line explicitly: the
+            3.x line of this library targets Spring Boot 4, which this
+            project doesn't use, so - unlike the rest of this file - this
+            dependency needs its own explicit <version>, not just whatever
+            spring-boot-starter-parent happens to manage.
+        -->
+        <dependency>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+            <version>2.6.0</version>
+        </dependency>
+
         <!-- Testing -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

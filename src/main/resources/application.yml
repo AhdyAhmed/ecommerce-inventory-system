@@ -3,3 +3,13 @@ spring:
     name: ecommerce-inventory-system
   profiles:
     active: dev
+
+# Swagger UI at /swagger-ui.html, raw OpenAPI JSON at /v3/api-docs (Day 11).
+# Sorting is cosmetic only - it doesn't affect the generated spec's content,
+# just makes /swagger-ui.html predictable to browse instead of whatever
+# order the controllers happen to load in.
+springdoc:
+  swagger-ui:
+    operations-sorter: alpha
+    tags-sorter: alpha
+    disable-swagger-default-url: true

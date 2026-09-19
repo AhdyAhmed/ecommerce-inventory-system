@@ -1,5 +1,6 @@
 package com.portfolio.ecommerce.dto.product;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -20,20 +21,19 @@ import java.math.BigDecimal;
 @Setter
 public class ProductSearchCriteria {
 
-    /**
-     * Case-insensitive substring match against product name.
-     */
+    @Schema(description = "Case-insensitive substring match against product name.", example = "laptop")
     private String name;
 
+    @Schema(description = "Exact category ID to filter by.", example = "1")
     private Long categoryId;
 
+    @Schema(description = "Minimum price, inclusive.", example = "50.00")
     private BigDecimal minPrice;
 
+    @Schema(description = "Maximum price, inclusive.", example = "500.00")
     private BigDecimal maxPrice;
 
-    /**
-     * true -> stockQuantity > 0, false -> stockQuantity == 0, null -> no filter.
-     */
+    @Schema(description = "true -> only in-stock products, false -> only out-of-stock, omitted -> no filter.", example = "true")
     private Boolean inStock;
 
 }
