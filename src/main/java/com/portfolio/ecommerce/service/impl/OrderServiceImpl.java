@@ -10,6 +10,7 @@ import com.portfolio.ecommerce.dto.order.OrderRequestDto;
 import com.portfolio.ecommerce.dto.order.OrderResponseDto;
 import com.portfolio.ecommerce.exception.InsufficientStockException;
 import com.portfolio.ecommerce.exception.InvalidOrderStateException;
+import com.portfolio.ecommerce.exception.ProductNotAvailableException;
 import com.portfolio.ecommerce.exception.ResourceNotFoundException;
 import com.portfolio.ecommerce.mapper.OrderMapper;
 import com.portfolio.ecommerce.repository.OrderRepository;
@@ -17,6 +18,7 @@ import com.portfolio.ecommerce.repository.ProductRepository;
 import com.portfolio.ecommerce.repository.UserRepository;
 import com.portfolio.ecommerce.service.OrderService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -26,10 +28,20 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class OrderServiceImpl implements OrderService {
+
+    /**
+     * Purely a logging threshold - "warn in the log when a decrement leaves
+     * a product at or below this many units" - and unrelated to
+     * ProductService.getLowStock(int threshold)'s caller-supplied query
+     * parameter of the same name. Kept small and fixed here since it's just
+     * an operational signal, not a business rule anyone configures per call.
+     */
+    private static final int LOW_STOCK_LOG_THRESHOLD = 5;
 
     private final OrderRepository orderRepository;
     private final UserRepository userRepository;
@@ -67,6 +79,12 @@ public class OrderServiceImpl implements OrderService {
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found with id: " + itemRequest.getProductId()));
 
+            if (!product.isActive()) {
+                throw new ProductNotAvailableException(
+                        "Product '%s' (sku: %s) has been discontinued and can't be ordered"
+                                .formatted(product.getName(), product.getSku()));
+            }
+
             int requestedQuantity = itemRequest.getQuantity();
             if (product.getStockQuantity() < requestedQuantity) {
                 throw new InsufficientStockException(
@@ -74,7 +92,13 @@ public class OrderServiceImpl implements OrderService {
                                 .formatted(product.getName(), product.getSku(), requestedQuantity, product.getStockQuantity()));
             }
 
-            product.setStockQuantity(product.getStockQuantity() - requestedQuantity);
+            int remainingStock = product.getStockQuantity() - requestedQuantity;
+            product.setStockQuantity(remainingStock);
+
+            if (remainingStock <= LOW_STOCK_LOG_THRESHOLD) {
+                log.warn("Low stock after order: productId={}, sku={}, remainingStock={}",
+                        product.getId(), product.getSku(), remainingStock);
+            }
 
             OrderItem orderItem = OrderItem.builder()
                     .product(product)
@@ -88,6 +112,10 @@ public class OrderServiceImpl implements OrderService {
         order.setTotalAmount(calculateTotal(order));
 
         Order saved = orderRepository.save(order);
+
+        log.info("Order created: orderId={}, userId={}, itemCount={}, totalAmount={}",
+                saved.getId(), user.getId(), saved.getItems().size(), saved.getTotalAmount());
+
         return orderMapper.toResponseDto(saved);
     }
 
@@ -124,6 +152,7 @@ public class OrderServiceImpl implements OrderService {
                     "Only PENDING orders can be confirmed (order %d is %s)".formatted(id, order.getStatus()));
         }
         order.setStatus(OrderStatus.CONFIRMED);
+        log.info("Order confirmed: orderId={}", id);
         return orderMapper.toResponseDto(order);
     }
 
@@ -146,6 +175,7 @@ public class OrderServiceImpl implements OrderService {
         }
 
         order.setStatus(OrderStatus.CANCELLED);
+        log.info("Order cancelled: orderId={}, itemsRestocked={}", id, order.getItems().size());
         return orderMapper.toResponseDto(order);
     }
 

@@ -46,12 +46,22 @@ public class Product extends BaseEntity {
     private Integer stockQuantity;
 
     /**
-     * Optimistic locking version. Not exercised yet - Project 3 is where this
-     * actually gets tested under concurrent stock decrements - but it's free
-     * to add now and avoids a schema change later.
+     * Optimistic locking version. As of Day 12, GlobalExceptionHandler maps a
+     * concurrent-update conflict on this column to a 409 instead of a raw
+     * 500 - see its Javadoc for why that's a stopgap, not the real fix.
      */
     @Version
     private Long version;
+
+    /**
+     * Discontinued products stay in the catalog (existing orders still
+     * reference them) but can't be ordered again. Managed by the dedicated
+     * /discontinue and /reactivate endpoints, not by the create/update DTO -
+     * see ProductController's Javadoc on those endpoints for why.
+     */
+    @Builder.Default
+    @Column(nullable = false)
+    private boolean active = true;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)

@@ -144,4 +144,37 @@ public class ProductController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Deliberately a dedicated action endpoint rather than an `active` field
+     * on the create/update DTO (Day 12 edge case: ordering a discontinued
+     * product). Folding it into the full-replace PUT body would make every
+     * client sending a PUT responsible for remembering and re-sending the
+     * current active status just to avoid accidentally flipping it - the
+     * same "action endpoint" shape Orders already uses for /confirm and
+     * /cancel.
+     */
+    @PostMapping("/{id}/discontinue")
+    @Operation(summary = "Discontinue a product", description = "Marks the product unavailable for new orders. Existing orders that already reference it are unaffected.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Product discontinued"),
+            @ApiResponse(responseCode = "404", description = "No product with that ID",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<ProductResponseDto> discontinue(
+            @Parameter(description = "Product ID", example = "1") @PathVariable Long id) {
+        return ResponseEntity.ok(productService.discontinue(id));
+    }
+
+    @PostMapping("/{id}/reactivate")
+    @Operation(summary = "Reactivate a discontinued product", description = "Reverses /discontinue.")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "Product reactivated"),
+            @ApiResponse(responseCode = "404", description = "No product with that ID",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    public ResponseEntity<ProductResponseDto> reactivate(
+            @Parameter(description = "Product ID", example = "1") @PathVariable Long id) {
+        return ResponseEntity.ok(productService.reactivate(id));
+    }
+
 }

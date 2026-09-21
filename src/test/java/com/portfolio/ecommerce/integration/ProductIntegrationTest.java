@@ -2,6 +2,7 @@ package com.portfolio.ecommerce.integration;
 
 import com.portfolio.ecommerce.AbstractIntegrationTest;
 import com.portfolio.ecommerce.domain.Category;
+import com.portfolio.ecommerce.domain.Product;
 import com.portfolio.ecommerce.dto.product.ProductRequestDto;
 import com.portfolio.ecommerce.repository.CategoryRepository;
 import com.portfolio.ecommerce.repository.ProductRepository;
@@ -163,6 +164,36 @@ class ProductIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(jsonPath("$.message", containsString("Category not found")));
 
         assertThat(productRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("Day 12: discontinue then reactivate, verified against the real DB, not just the HTTP response")
+    void discontinueThenReactivate() throws Exception {
+        Product product = productRepository.save(Product.builder()
+                .name("Mouse").sku("ELEC-MOUSE-001")
+                .price(new BigDecimal("25.00")).stockQuantity(10)
+                .category(electronics).build());
+
+        assertThat(productRepository.findById(product.getId()).orElseThrow().isActive()).isTrue();
+
+        mockMvc.perform(post("/api/products/{id}/discontinue", product.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
+
+        assertThat(productRepository.findById(product.getId()).orElseThrow().isActive()).isFalse();
+
+        mockMvc.perform(post("/api/products/{id}/reactivate", product.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(true));
+
+        assertThat(productRepository.findById(product.getId()).orElseThrow().isActive()).isTrue();
+    }
+
+    @Test
+    @DisplayName("Day 12: discontinuing a nonexistent product returns 404")
+    void discontinueNotFoundReturns404() throws Exception {
+        mockMvc.perform(post("/api/products/{id}/discontinue", 999_999L))
+                .andExpect(status().isNotFound());
     }
 
 }

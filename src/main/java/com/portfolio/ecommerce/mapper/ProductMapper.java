@@ -60,6 +60,7 @@ public class ProductMapper {
                 .stockQuantity(product.getStockQuantity())
                 .categoryId(product.getCategory() != null ? product.getCategory().getId() : null)
                 .categoryName(product.getCategory() != null ? product.getCategory().getName() : null)
+                .active(product.isActive())
                 .tags(tagNames)
                 .createdAt(product.getCreatedAt())
                 .updatedAt(product.getUpdatedAt())

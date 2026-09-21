@@ -14,6 +14,7 @@ import com.portfolio.ecommerce.repository.TagRepository;
 import com.portfolio.ecommerce.service.ProductService;
 import com.portfolio.ecommerce.specification.ProductSpecification;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -24,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -42,6 +44,9 @@ public class ProductServiceImpl implements ProductService {
 
         Product product = productMapper.toEntity(request, category, tags);
         Product saved = productRepository.save(product);
+
+        log.info("Product created: id={}, sku={}, categoryId={}, stockQuantity={}",
+                saved.getId(), saved.getSku(), category.getId(), saved.getStockQuantity());
 
         return productMapper.toResponseDto(saved);
     }
@@ -82,6 +87,8 @@ public class ProductServiceImpl implements ProductService {
         productMapper.updateEntityFromDto(request, product, category, tags);
         Product saved = productRepository.save(product);
 
+        log.info("Product updated: id={}, sku={}", saved.getId(), saved.getSku());
+
         return productMapper.toResponseDto(saved);
     }
 
@@ -92,6 +99,31 @@ public class ProductServiceImpl implements ProductService {
             throw new ResourceNotFoundException("Product not found with id: " + id);
         }
         productRepository.deleteById(id);
+        log.info("Product deleted: id={}", id);
+    }
+
+    /**
+     * No explicit save() call in discontinue/reactivate below - same pattern
+     * as OrderServiceImpl's stock decrements: setting a field on a managed
+     * entity inside a @Transactional method is enough, JPA's dirty checking
+     * flushes it at commit.
+     */
+    @Override
+    @Transactional
+    public ProductResponseDto discontinue(Long id) {
+        Product product = findProductOrThrow(id);
+        product.setActive(false);
+        log.info("Product discontinued: id={}, sku={}", product.getId(), product.getSku());
+        return productMapper.toResponseDto(product);
+    }
+
+    @Override
+    @Transactional
+    public ProductResponseDto reactivate(Long id) {
+        Product product = findProductOrThrow(id);
+        product.setActive(true);
+        log.info("Product reactivated: id={}, sku={}", product.getId(), product.getSku());
+        return productMapper.toResponseDto(product);
     }
 
     private Product findProductOrThrow(Long id) {

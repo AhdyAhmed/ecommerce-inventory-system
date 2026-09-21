@@ -286,4 +286,55 @@ class ProductServiceImplTest {
         }
     }
 
+    @Nested
+    @DisplayName("discontinue / reactivate (Day 12)")
+    class DiscontinueReactivate {
+
+        @Test
+        @DisplayName("discontinue: flips active to false on the managed entity, no explicit save() call needed")
+        void discontinueSetsActiveFalse() {
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(productMapper.toResponseDto(product)).willReturn(
+                    ProductResponseDto.builder().id(10L).active(false).build());
+
+            ProductResponseDto result = productService.discontinue(10L);
+
+            assertThat(product.isActive()).isFalse();
+            assertThat(result.isActive()).isFalse();
+            verify(productRepository, never()).save(any()); // dirty checking, not an explicit save
+        }
+
+        @Test
+        @DisplayName("discontinue: not-found")
+        void discontinueThrowsWhenNotFound() {
+            given(productRepository.findById(999L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> productService.discontinue(999L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+
+        @Test
+        @DisplayName("reactivate: flips active back to true")
+        void reactivateSetsActiveTrue() {
+            product.setActive(false);
+            given(productRepository.findById(10L)).willReturn(Optional.of(product));
+            given(productMapper.toResponseDto(product)).willReturn(
+                    ProductResponseDto.builder().id(10L).active(true).build());
+
+            ProductResponseDto result = productService.reactivate(10L);
+
+            assertThat(product.isActive()).isTrue();
+            assertThat(result.isActive()).isTrue();
+        }
+
+        @Test
+        @DisplayName("reactivate: not-found")
+        void reactivateThrowsWhenNotFound() {
+            given(productRepository.findById(999L)).willReturn(Optional.empty());
+
+            assertThatThrownBy(() -> productService.reactivate(999L))
+                    .isInstanceOf(ResourceNotFoundException.class);
+        }
+    }
+
 }

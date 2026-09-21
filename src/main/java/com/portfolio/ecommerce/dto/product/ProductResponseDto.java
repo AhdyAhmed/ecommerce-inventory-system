@@ -43,6 +43,9 @@ public class ProductResponseDto {
     @Schema(example = "Electronics")
     private String categoryName;
 
+    @Schema(description = "False if this product has been discontinued via /discontinue - discontinued products can't be ordered.", example = "true")
+    private boolean active;
+
     @Schema(description = "Names of every tag attached to this product.", example = "[\"bestseller\", \"new-arrival\"]")
     private Set<String> tags;
 

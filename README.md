@@ -5,11 +5,13 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 11 — OpenAPI/Swagger documentation. Once running, browse
-the full interactive API docs at http://localhost:8080/swagger-ui.html.
-More docs and a final polish pass land over the following days (see
-[Roadmap](#roadmap) below). To confirm the whole app works at this point,
-not just today's feature, run the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
+**Status:** 🚧 Day 12 — edge cases (discontinued products, negative
+quantities, a documented concurrency caveat) and structured logging. See
+[Edge Cases](#edge-cases) below. Once running, browse the full interactive
+API docs at http://localhost:8080/swagger-ui.html. A final polish pass
+lands over the following days (see [Roadmap](#roadmap) below). To confirm
+the whole app works at this point, not just today's feature, run the
+[Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -147,6 +149,8 @@ only - the `Product` entity is never returned or accepted directly).
 | `GET` | `/api/products/low-stock` | Products at or below a stock threshold |
 | `PUT` | `/api/products/{id}` | Replace a product |
 | `DELETE` | `/api/products/{id}` | Delete a product |
+| `POST` | `/api/products/{id}/discontinue` | Mark a product unavailable for new orders (Day 12) |
+| `POST` | `/api/products/{id}/reactivate` | Reverse `/discontinue` (Day 12) |
 
 Requests are validated with Bean Validation, and every error - validation
 failure, missing resource, malformed JSON, or anything unexpected - comes
@@ -292,6 +296,57 @@ Orders for a user within a date range (ISO-8601 timestamps):
 curl "http://localhost:8080/api/orders/search?email=alice@example.com&from=2026-01-01T00:00:00Z&to=2026-12-31T23:59:59Z"
 ```
 
+Discontinuing a product, then trying to order it:
+
+```bash
+curl -X POST http://localhost:8080/api/products/1/discontinue
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1, "items": [{"productId": 1, "quantity": 1}]}'
+# -> 409 Conflict: "Product 'Laptop' (sku: ELEC-LAPTOP-001) has been discontinued and can't be ordered"
+```
+
+## Edge Cases
+
+Day 12 walks through four specific failure modes end-to-end - each one has
+a passing automated test (unit and/or integration, listed below) and a
+`curl` example in this README, not just a mention here.
+
+| Edge case | How it's handled | Tested by |
+|---|---|---|
+| **Ordering a discontinued product** | `Product.active` (default `true`) is set to `false` via `POST /products/{id}/discontinue`. `OrderServiceImpl.create()` checks this *before* the stock check, for every item, and throws `ProductNotAvailableException` -> `409` if any item's product isn't active. | `OrderServiceImplTest.throwsWhenProductIsDiscontinued`, `OrderIntegrationTest.orderingDiscontinuedProductReturnsConflict`, `ProductServiceImplTest.DiscontinueReactivate`, `ProductIntegrationTest.discontinueThenReactivate` |
+| **Negative order quantity** | Already rejected by Bean Validation (`@Positive` on `OrderItemRequestDto.quantity`, cascaded via `@Valid` on the list) - this never reaches the service layer at all. Day 12 adds the test that actually proves it, over real HTTP. | `OrderIntegrationTest.negativeQuantityReturnsValidationError` |
+| **Non-existent user** | `OrderServiceImpl.create()` looks up the user first, before touching any product, and throws `ResourceNotFoundException` -> `404`. Already covered since Day 9/10; listed here for completeness. | `OrderServiceImplTest.throwsWhenUserNotFound`, `OrderIntegrationTest.createOrderWithUnknownUserReturnsNotFound` |
+| **Concurrent stock decrement** | `Product.version` (`@Version`, added Day 2) makes Hibernate detect it when two requests read the same product row and both try to commit a change. `GlobalExceptionHandler` now turns that into a clean `409` instead of a raw `500`. **This is explicitly a stopgap, not a fix** - see the Design Decisions entry below for what's actually missing and why the real fix is out of scope for this project. | `GlobalExceptionHandlerTest.handlesOptimisticLockConflict` (verifies the mapping deterministically; see that test's Javadoc for why an actual concurrent-write reproduction isn't attempted here) |
+
+### Structured logging
+
+Every service-layer state change and every handled exception now logs
+through SLF4J (`@Slf4j`), at a level matching who's responsible:
+
+- **`INFO`** - business events worth an audit trail: product created/
+  updated/deleted/discontinued/reactivated, order created/confirmed/
+  cancelled.
+- **`WARN`** - expected, client-caused outcomes: every 4xx response
+  (`GlobalExceptionHandler`, one line per handled exception type, with the
+  HTTP method/path/message), plus a dedicated low-stock warning logged the
+  moment an order's stock decrement leaves a product at or below 5 units.
+- **`ERROR`** - only the catch-all "unexpected exception" handler, with the
+  full stack trace, since that's the one case where something actually
+  went wrong on the server's side rather than a normal rejected request.
+
+`application-dev.yml` already sets `com.portfolio.ecommerce: debug` (from
+Day 1), so all of the above are visible by default when running locally.
+
+```bash
+curl -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1, "items": [{"productId": 2, "quantity": 2}]}'
+# check the app's console output for lines like:
+#   INFO ... Order created: orderId=3, userId=1, itemCount=1, totalAmount=50.00
+#   WARN ... Low stock after order: productId=2, sku=ELEC-MOUSE-001, remainingStock=1
+```
+
 ## Verification Checklist (run this to confirm the whole app, not just today's feature)
 
 This section is cumulative and updated every day - it's meant to prove the
@@ -409,7 +464,7 @@ curl -s "http://localhost:8080/api/orders/search?email=alice@example.com&from=20
 Expect: only Alice's orders, newest first for #8's first call; only orders
 inside the date range for the second.
 
-**9. Automated tests** (Day 9 unit tests + Day 10 integration tests)
+**9. Automated tests** (Day 9 unit tests + Day 10 integration tests + Day 12 additions)
 
 ```bash
 mvn test
@@ -419,9 +474,23 @@ disposable `postgres:16-alpine` container automatically - you do **not**
 need `docker-compose up -d` for this step; that's only for running the app
 itself). Expect: `Tests run: <N>, Failures: 0, Errors: 0` and `BUILD SUCCESS`.
 
-Unit tests (mocked repositories, no database - see Day 9 in the Roadmap for
-the full list): `ProductServiceImplTest`, `OrderServiceImplTest`,
-`SkuFormatValidatorTest`.
+Unit tests (mocked repositories, no database):
+
+- `ProductServiceImplTest` - see Day 9 in the Roadmap for the original
+  list; Day 12 adds a `DiscontinueReactivate` nested class covering both
+  actions' happy paths and not-found cases.
+- `OrderServiceImplTest` - see Day 9 in the Roadmap for the original list;
+  Day 12 adds `throwsWhenProductIsDiscontinued`, asserting the discontinued
+  check runs *before* the stock check and that stock is left untouched.
+- `SkuFormatValidatorTest` (Day 9, unchanged).
+- `GlobalExceptionHandlerTest` (new, Day 12) - calls every handler method
+  directly with a mocked `HttpServletRequest`, deterministically covering
+  all seven exception-to-HTTP-status mappings, including the two Day 12
+  additions (`ProductNotAvailableException` -> 409,
+  `ObjectOptimisticLockingFailureException` -> 409 with a safe generic
+  message rather than Hibernate's raw one). See its Javadoc for why this is
+  a plain unit test rather than an attempt to reproduce a real concurrent
+  write.
 
 Integration tests (real Spring context, real MockMvc HTTP dispatch through
 the actual controllers, real Postgres via Testcontainers):
@@ -433,19 +502,23 @@ the actual controllers, real Postgres via Testcontainers):
   delete -> re-read returns 404, with each step also verified directly
   against `ProductRepository`, not just the HTTP response), the validation
   error response shape over real HTTP (`fieldErrors` keyed by field, one
-  entry per violation), and an unknown `categoryId` returning 404 rather than
-  400 or 500.
+  entry per violation), an unknown `categoryId` returning 404 rather than
+  400 or 500, and (Day 12) a discontinue -> reactivate lifecycle verified
+  against the real DB after each step.
 - `OrderIntegrationTest` - order creation with stock really decremented in
   Postgres, insufficient stock returning 409 with stock left untouched, an
-  unknown user returning 404, and the confirm/cancel state machine
-  restoring stock for real on cancel. The one test this whole day exists
-  for: when an order has two items and the *second* one fails its stock
-  check, the *first* item's already-decremented stock is asserted to be
-  back to its original value afterward - proving the `@Transactional`
-  order-creation method really rolls back everything it did, against a real
-  database. Day 9's mocked-repository test could only prove the exception
-  was thrown and `save()` was never called; it had no real transaction to
-  roll back and so could never make this specific claim.
+  unknown user returning 404, the confirm/cancel state machine restoring
+  stock for real on cancel, and (Day 12) ordering a discontinued product
+  returning 409 with stock untouched, plus a negative quantity returning
+  400 before ever reaching the service layer. The one test this whole
+  suite exists for: when an order has two items and the *second* one fails
+  its stock check, the *first* item's already-decremented stock is
+  asserted to be back to its original value afterward - proving the
+  `@Transactional` order-creation method really rolls back everything it
+  did, against a real database. Day 9's mocked-repository test could only
+  prove the exception was thrown and `save()` was never called; it had no
+  real transaction to roll back and so could never make this specific
+  claim.
 
 All of the above run in the same `mvn test` invocation - JUnit doesn't
 distinguish "unit" from "integration" here by naming convention alone, it's
@@ -469,6 +542,29 @@ Then open **http://localhost:8080/swagger-ui.html** in a browser and check:
 - "Try it out" on `POST /api/products` and `POST /api/orders` shows a
   pre-filled example request body (from the `@Schema(example = ...)`
   annotations on the DTOs) rather than an empty or all-null template
+
+**11. Edge cases and logging** (Day 12 - see [Edge Cases](#edge-cases) above for the full table)
+
+```bash
+# discontinue product 1, then try to order it -> 409, stock untouched
+curl -X POST http://localhost:8080/api/products/1/discontinue
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1, "items": [{"productId": 1, "quantity": 1}]}'
+curl -X POST http://localhost:8080/api/products/1/reactivate   # put it back for later steps
+
+# negative quantity -> 400 with fieldErrors, never reaches the service layer
+curl -i -X POST http://localhost:8080/api/orders \
+  -H "Content-Type: application/json" \
+  -d '{"userId": 1, "items": [{"productId": 1, "quantity": -1}]}'
+```
+While these run, watch the app's console output: the discontinued-product
+attempt should log a `WARN` line from `GlobalExceptionHandler` (`409 on
+POST /api/orders: ...discontinued...`), and a successful order that leaves
+a product at 5 units or fewer should log a `WARN` low-stock line from
+`OrderServiceImpl`. Also confirm `mvn test` (step 9) now additionally
+passes `GlobalExceptionHandlerTest`, which deterministically covers every
+handler branch including the two new ones from today.
 
 ---
 
@@ -494,12 +590,54 @@ Then open **http://localhost:8080/swagger-ui.html** in a browser and check:
 - [x] **Day 9** — Unit tests (JUnit5 + Mockito)
 - [x] **Day 10** — Integration tests (Testcontainers)
 - [x] **Day 11** — OpenAPI / Swagger docs
-- [ ] **Day 12** — Edge cases and structured logging
+- [x] **Day 12** — Edge cases and structured logging
 - [ ] **Day 13** — Architecture diagram + full README
 - [ ] **Day 14** — Refactor pass
 - [ ] **Day 15** — Final polish, `v1.0` tag
 
 ## Design Decisions
+
+- **`discontinue`/`reactivate` are dedicated action endpoints, not a field
+  on the create/update DTO:** `ProductRequestDto` already models full PUT
+  replace semantics for everything else, and folding `active` into that
+  would make every client sending a `PUT` responsible for remembering and
+  re-sending the product's current active status just to avoid
+  accidentally flipping it back on. This mirrors the shape Orders already
+  uses for `/confirm` and `/cancel` - a state transition is a distinct
+  action, not an incidental side effect of replacing a resource.
+- **Optimistic-lock handling is explicitly a stopgap, documented as such in
+  three places (the exception handler's Javadoc, the `Product.version`
+  field's Javadoc, and the Edge Cases table above):** mapping
+  `ObjectOptimisticLockingFailureException` to a clean `409` stops a client
+  from seeing a raw `500` and a Hibernate stack trace, but it does nothing
+  to make the *losing* request in a race actually succeed - the customer
+  whose request lost the race just gets told to retry manually. A
+  production-grade fix needs either a retry-with-backoff loop around the
+  stock decrement or a pessimistic lock on the product row for the
+  duration of the check-then-decrement, and deciding between those two
+  (and load-testing the result) is real enough work that it's explicitly
+  Project 3's problem, not something to half-do here under Day 12's
+  "note it" scope.
+- **Error logging lives in `GlobalExceptionHandler`, not scattered across
+  try/catch blocks in each service method:** every request that ends in an
+  exception passes through the handler exactly once, regardless of which
+  service or which method threw it, so putting the logging there gives
+  complete coverage (one log line per failed request, correctly leveled by
+  status code) without duplicating logging code in `ProductServiceImpl`
+  and `OrderServiceImpl` for every exception they can throw. Business
+  events that *aren't* errors (order created, product discontinued) still
+  get logged at their actual source in the service layer, since
+  `GlobalExceptionHandler` never sees a successful call.
+- **The low-stock log threshold (`5`, in `OrderServiceImpl`) is a separate
+  constant from `ProductService.getLowStock(int threshold)`'s caller-
+  supplied query parameter, despite the similar name:** one is an
+  operational signal ("warn when a decrement leaves a product this low")
+  that fires automatically and doesn't need to be configurable per request;
+  the other is a deliberate query a caller runs on demand with whatever
+  threshold makes sense for them right now. Conflating them would mean
+  either the log noise level changes based on what some client happened to
+  query for, or the query's threshold gets silently capped by a constant
+  meant for something else.
 
 - **springdoc-openapi pinned to the explicit `2.6.0` version, not left to
   the parent POM:** every other dependency in `pom.xml` relies on

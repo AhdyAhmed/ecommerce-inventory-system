@@ -11,6 +11,7 @@ import com.portfolio.ecommerce.dto.order.OrderRequestDto;
 import com.portfolio.ecommerce.dto.order.OrderResponseDto;
 import com.portfolio.ecommerce.exception.InsufficientStockException;
 import com.portfolio.ecommerce.exception.InvalidOrderStateException;
+import com.portfolio.ecommerce.exception.ProductNotAvailableException;
 import com.portfolio.ecommerce.exception.ResourceNotFoundException;
 import com.portfolio.ecommerce.mapper.OrderMapper;
 import com.portfolio.ecommerce.repository.OrderRepository;
@@ -192,6 +193,27 @@ class OrderServiceImplTest {
                     .isInstanceOf(InsufficientStockException.class);
 
             // save() is never reached regardless of how many items succeeded before the failure
+            verify(orderRepository, never()).save(any());
+        }
+
+        @Test
+        @DisplayName("edge case (Day 12): ordering a discontinued product throws before the stock check even runs")
+        void throwsWhenProductIsDiscontinued() {
+            laptop.setActive(false);
+            OrderRequestDto request = OrderRequestDto.builder()
+                    .userId(1L)
+                    .items(List.of(OrderItemRequestDto.builder().productId(1L).quantity(1).build()))
+                    .build();
+            given(userRepository.findById(1L)).willReturn(Optional.of(user));
+            given(productRepository.findById(1L)).willReturn(Optional.of(laptop));
+
+            assertThatThrownBy(() -> orderService.create(request))
+                    .isInstanceOf(ProductNotAvailableException.class)
+                    .hasMessageContaining("Laptop")
+                    .hasMessageContaining("discontinued");
+
+            // stock must be untouched - the discontinued check runs before the stock decrement
+            assertThat(laptop.getStockQuantity()).isEqualTo(5);
             verify(orderRepository, never()).save(any());
         }
     }

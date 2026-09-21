@@ -189,4 +189,45 @@ class OrderIntegrationTest extends AbstractIntegrationTest {
         assertThat(productRepository.findById(laptop.getId()).orElseThrow().getStockQuantity()).isEqualTo(5);
     }
 
+    @Test
+    @DisplayName("edge case (Day 12): ordering a discontinued product returns 409, stock untouched")
+    void orderingDiscontinuedProductReturnsConflict() throws Exception {
+        mockMvc.perform(post("/api/products/{id}/discontinue", laptop.getId()))
+                .andExpect(status().isOk());
+
+        OrderRequestDto request = OrderRequestDto.builder()
+                .userId(alice.getId())
+                .items(List.of(OrderItemRequestDto.builder().productId(laptop.getId()).quantity(1).build()))
+                .build();
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message", org.hamcrest.Matchers.containsString("discontinued")));
+
+        assertThat(productRepository.findById(laptop.getId()).orElseThrow().getStockQuantity()).isEqualTo(5);
+        assertThat(orderRepository.count()).isZero();
+    }
+
+    @Test
+    @DisplayName("edge case (Day 12): a negative quantity is rejected by bean validation before the service layer ever runs")
+    void negativeQuantityReturnsValidationError() throws Exception {
+        OrderRequestDto request = OrderRequestDto.builder()
+                .userId(alice.getId())
+                .items(List.of(OrderItemRequestDto.builder().productId(laptop.getId()).quantity(-1).build()))
+                .build();
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Validation failed"))
+                .andExpect(jsonPath("$.fieldErrors").exists());
+
+        // nothing should have been touched - this never even reaches OrderServiceImpl
+        assertThat(productRepository.findById(laptop.getId()).orElseThrow().getStockQuantity()).isEqualTo(5);
+        assertThat(orderRepository.count()).isZero();
+    }
+
 }

@@ -28,4 +28,17 @@ public interface ProductService {
 
     void delete(Long id);
 
+    /**
+     * Marks a product unavailable for new orders without deleting it -
+     * existing orders still reference it. OrderServiceImpl.create() rejects
+     * any item for a discontinued product with a 409, not a 404: the
+     * product is real, it's just not orderable right now.
+     */
+    ProductResponseDto discontinue(Long id);
+
+    /**
+     * Reverses {@link #discontinue(Long)}.
+     */
+    ProductResponseDto reactivate(Long id);
+
 }
