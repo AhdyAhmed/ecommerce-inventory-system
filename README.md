@@ -5,13 +5,14 @@ production-adjacent practices in Spring Boot. This is Project 1 of a 3-project
 backend portfolio (Core REST API → Auth & Authorization → Production-grade
 Booking/Order System).
 
-**Status:** 🚧 Day 12 — edge cases (discontinued products, negative
-quantities, a documented concurrency caveat) and structured logging. See
-[Edge Cases](#edge-cases) below. Once running, browse the full interactive
-API docs at http://localhost:8080/swagger-ui.html. A final polish pass
-lands over the following days (see [Roadmap](#roadmap) below). To confirm
-the whole app works at this point, not just today's feature, run the
-[Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
+**Status:** 🚧 Day 13 — README + architecture write-up (this file). See
+[Architecture](#architecture) for the layered design and package layout,
+and [Domain Model](#domain-model) for the entity-relationship diagram.
+Once running, browse the full interactive API docs at
+http://localhost:8080/swagger-ui.html. A refactor/cleanup pass and final
+polish land over the following days (see [Roadmap](#roadmap) below). To
+confirm the whole app works at this point, not just today's feature, run
+the [Verification Checklist](#verification-checklist-run-this-to-confirm-the-whole-app-not-just-todays-feature).
 
 ## Tech Stack
 
@@ -87,6 +88,90 @@ docker-compose down
 
 Add `-v` to also drop the data volume: `docker-compose down -v`
 
+## Architecture
+
+Strict layering, one direction only - a layer talks to the one directly
+below it, never sideways into another layer's internals, and never back up:
+
+```mermaid
+flowchart TD
+    Client([HTTP Client / Swagger UI])
+
+    subgraph Web["Web layer"]
+        Controller["Controller<br/>(ProductController, OrderController)"]
+        GEH["GlobalExceptionHandler<br/>(@RestControllerAdvice)"]
+    end
+
+    subgraph App["Application layer"]
+        Service["Service<br/>(ProductServiceImpl, OrderServiceImpl)<br/>@Transactional boundaries live here"]
+        Mapper["Mapper<br/>(hand-written entity to DTO)"]
+        Spec["Specification<br/>(ProductSpecification, dynamic filters)"]
+    end
+
+    subgraph Data["Persistence layer"]
+        Repository["Repository<br/>(Spring Data JPA)"]
+        Entity["Entity<br/>(User, Product, Category, Tag, Order, OrderItem)"]
+    end
+
+    DB[(PostgreSQL)]
+
+    Client -->|"JSON request"| Controller
+    Controller -->|"validated DTO<br/>(@Valid)"| Service
+    Controller -.->|"exception propagates up"| GEH
+    GEH -->|"ErrorResponse JSON"| Client
+    Service --> Mapper
+    Service --> Spec
+    Service -->|"entities"| Repository
+    Repository --> Entity
+    Repository --> DB
+    Service -->|"response DTO"| Controller
+    Controller -->|"JSON response"| Client
+```
+
+- **Controllers are deliberately thin** - request/response translation and
+  HTTP status codes only. See `ProductController`'s class-level Javadoc.
+  Every business rule (category/tag resolution, stock decrement, state
+  transitions) lives in the service layer, which is what makes it
+  unit-testable with Mockito (Day 9) without a running web server.
+- **DTOs are the only thing that crosses the Controller boundary in either
+  direction** - entities are never serialized directly to JSON or bound
+  directly from a request body. See the Design Decisions entry on this
+  below for why.
+- **Exceptions flow up, not down** - a service throws a plain exception
+  (`ResourceNotFoundException`, `InsufficientStockException`, etc.) and has
+  no awareness of HTTP at all; `GlobalExceptionHandler` is the only place
+  that translates an exception into a status code and an `ErrorResponse`
+  body. That's also the single place error logging happens (Day 12) - see
+  its own Design Decisions entry for why that's centralized there instead
+  of scattered through the services.
+- **`@Transactional` boundaries live in the service layer**, not the
+  controller or repository - see `OrderServiceImpl`'s class-level Javadoc
+  for what that buys `create()` when an item partway through an order fails
+  (Day 10's integration tests prove this rolls back for real, against
+  Postgres, not just in a mock).
+
+### Package layout
+
+```
+com.portfolio.ecommerce
+├── controller/      Thin HTTP layer - one class per resource
+├── service/          Business logic, interface + impl per resource
+│   └── impl/
+├── repository/       Spring Data JPA interfaces
+├── domain/            JPA entities
+│   └── enums/
+├── dto/               Request/response shapes, one subpackage per resource
+│   ├── common/         Shared wrappers (PageResponse)
+│   ├── product/
+│   └── order/
+├── mapper/            Hand-written entity <-> DTO mapping
+├── specification/     Dynamic JPA Specification filters (Day 8)
+├── exception/         Custom exceptions + GlobalExceptionHandler
+├── validation/        Custom Bean Validation constraints (@ValidSku)
+├── config/             @Configuration classes (JPA auditing, OpenAPI)
+└── seed/               Dev-profile CommandLineRunner seed data
+```
+
 ## Domain Model
 
 ```mermaid
@@ -119,6 +204,7 @@ erDiagram
         BigDecimal price
         Integer stockQuantity
         Long version
+        boolean active
     }
     CATEGORY {
         Long id
@@ -134,6 +220,14 @@ Relationship types covered: one-to-many (`User→Order`, `Order→OrderItem`,
 `Category→Product`) and many-to-many (`Product↔Tag`).
 
 ## API
+
+📖 **Full interactive API docs (once the app is running):** http://localhost:8080/swagger-ui.html
+(raw OpenAPI 3 spec at http://localhost:8080/v3/api-docs). Every endpoint
+below - request/response schemas, example values, and every documented
+error response - is generated live from the code, not hand-maintained, so
+it can't drift out of sync with what's actually deployed. The tables below
+are a quick-reference summary for browsing this README; Swagger UI is the
+source of truth.
 
 Product CRUD is live end-to-end (Controller → Service → Repository, DTOs
 only - the `Product` entity is never returned or accepted directly).
@@ -591,12 +685,54 @@ handler branch including the two new ones from today.
 - [x] **Day 10** — Integration tests (Testcontainers)
 - [x] **Day 11** — OpenAPI / Swagger docs
 - [x] **Day 12** — Edge cases and structured logging
-- [ ] **Day 13** — Architecture diagram + full README
+- [x] **Day 13** — Architecture diagram + full README
 - [ ] **Day 14** — Refactor pass
 - [ ] **Day 15** — Final polish, `v1.0` tag
 
 ## Design Decisions
 
+*The three entries below are the ones the roadmap named explicitly for Day
+13; everything after them accumulated day-by-day as each feature landed,
+oldest first.*
+
+- **Why DTOs, and never the JPA entities directly, cross the Controller
+  boundary:** an entity's shape is driven by the database and JPA (lazy
+  collections, bidirectional relationships that would recurse infinitely
+  under naive Jackson serialization, the `@Version` field, cascading
+  `OrderItem`s). A client shouldn't see any of that, and shouldn't be able
+  to set fields like `version` or `id` on a create request. DTOs also let
+  the request and response shapes for the same resource differ on purpose -
+  `ProductRequestDto` has no `id`/`createdAt`/`categoryName` because those
+  aren't the client's to set, while `ProductResponseDto` has no `tagIds`
+  because the client needs the resolved tag *names*, not IDs it would have
+  to look up again. Coupling the API contract to the persistence model
+  would mean a schema change (or even a lazy-loading strategy change)
+  becomes a breaking API change.
+- **Why `Specification` over QueryDSL for dynamic filtering (Day 8):**
+  QueryDSL needs an annotation processor generating Q-classes at build
+  time, an extra Maven plugin, and a generated-sources directory to keep
+  out of version control - real cost for a project this size, where the
+  filtering need is five independent, optional, AND-combinable predicates
+  on one entity. `Specification` ships in Spring Data JPA already, composes
+  the same way (`.and(...)`), and the "no build step" trade-off only starts
+  to hurt on filters complex enough to need QueryDSL's stronger typing or
+  joins-as-first-class-objects - `ProductSpecification` isn't there. See
+  Day 8's dedicated Design Decisions entry (below) for the null-predicate
+  composition trick this relies on.
+- **Why these specific relationships (`User 1—* Order`, `Order 1—* OrderItem`,
+  `OrderItem *—1 Product`, `Product *—1 Category`, `Product *—* Tag`):**
+  each cardinality follows directly from a real constraint, not convention
+  for its own sake. `Order 1—* OrderItem` (not a direct `Order *—* Product`)
+  exists specifically so `OrderItem.unitPrice` can snapshot the price *at
+  order time* - collapsing it to a many-to-many would lose that snapshot
+  and let a later price change silently rewrite historical order totals.
+  `Product *—1 Category` (not many-to-many) reflects that this catalog
+  needs exactly one category per product for filtering/reporting; `Tag` is
+  many-to-many because tags are explicitly non-exclusive labels layered on
+  top of that one category. `User 1—* Order` and `Order 1—* OrderItem` are
+  both cascaded with orphan removal from the parent (see `Order.addItem`/
+  `removeItem` in the entity itself) so an order's line items can never
+  exist without their order.
 - **`discontinue`/`reactivate` are dedicated action endpoints, not a field
   on the create/update DTO:** `ProductRequestDto` already models full PUT
   replace semantics for everything else, and folding `active` into that
