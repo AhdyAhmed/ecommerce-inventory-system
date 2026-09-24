@@ -30,9 +30,8 @@ public class OpenApiConfig {
                                 cumulative verification checklist covering every endpoint below.""")
                         .version("v1.0")
                         .contact(new Contact()
-                                // TODO: replace with your actual GitHub repo URL once this is pushed
                                 .name("Project repository")
-                                .url("https://github.com/YOUR_USERNAME/ecommerce-inventory-system"))
+                                .url("https://github.com/REPLACE_WITH_YOUR_USERNAME/ecommerce-inventory-system"))
                         .license(new License()
                                 .name("Portfolio project - not licensed for production use")));
     }

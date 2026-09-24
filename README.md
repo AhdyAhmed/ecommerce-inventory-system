@@ -686,7 +686,7 @@ handler branch including the two new ones from today.
 - [x] **Day 11** — OpenAPI / Swagger docs
 - [x] **Day 12** — Edge cases and structured logging
 - [x] **Day 13** — Architecture diagram + full README
-- [ ] **Day 14** — Refactor pass
+- [x] **Day 14** — Refactor pass
 - [ ] **Day 15** — Final polish, `v1.0` tag
 
 ## Design Decisions

@@ -167,7 +167,7 @@ class ProductIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Day 12: discontinue then reactivate, verified against the real DB, not just the HTTP response")
+    @DisplayName("discontinue then reactivate, verified against the real DB, not just the HTTP response")
     void discontinueThenReactivate() throws Exception {
         Product product = productRepository.save(Product.builder()
                 .name("Mouse").sku("ELEC-MOUSE-001")
@@ -190,7 +190,7 @@ class ProductIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    @DisplayName("Day 12: discontinuing a nonexistent product returns 404")
+    @DisplayName("discontinuing a nonexistent product returns 404")
     void discontinueNotFoundReturns404() throws Exception {
         mockMvc.perform(post("/api/products/{id}/discontinue", 999_999L))
                 .andExpect(status().isNotFound());

@@ -7,7 +7,6 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
-import java.util.Optional;
 
 /**
  * {@code JpaSpecificationExecutor} adds {@code findAll(Specification, Pageable)}
@@ -16,10 +15,6 @@ import java.util.Optional;
  * be used for the combinable {@code /products/search} filtering.
  */
 public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpecificationExecutor<Product> {
-
-    Optional<Product> findBySku(String sku);
-
-    List<Product> findByCategory_Name(String categoryName);
 
     /**
      * Products at or below a stock threshold, cheapest-on-shelf-space-first

@@ -74,7 +74,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("Day 12: ProductNotAvailableException -> 409")
+    @DisplayName("ProductNotAvailableException -> 409")
     void handlesProductNotAvailable() {
         ResponseEntity<ErrorResponse> response = handler.handleConflict(
                 new ProductNotAvailableException("Product 'Laptop' has been discontinued and can't be ordered"), request);
@@ -84,7 +84,7 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    @DisplayName("Day 12: ObjectOptimisticLockingFailureException -> 409 with a generic retry message, not the raw Hibernate message")
+    @DisplayName("ObjectOptimisticLockingFailureException -> 409 with a generic retry message, not the raw Hibernate message")
     void handlesOptimisticLockConflict() {
         ObjectOptimisticLockingFailureException ex =
                 new ObjectOptimisticLockingFailureException(Product.class, 42L);
