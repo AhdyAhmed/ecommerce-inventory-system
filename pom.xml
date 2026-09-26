@@ -13,7 +13,7 @@
 
     <groupId>com.portfolio</groupId>
     <artifactId>ecommerce-inventory-system</artifactId>
-    <version>0.1.0</version>
+    <version>1.0.0</version>
     <name>ecommerce-inventory-system</name>
     <description>Core REST API portfolio project - E-Commerce / Inventory Management System</description>
 

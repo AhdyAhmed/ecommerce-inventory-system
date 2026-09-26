@@ -147,6 +147,40 @@ class ProductIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    @DisplayName("creating with a SKU that already exists returns 409, not 500")
+    void createWithDuplicateSkuReturnsConflict() throws Exception {
+        ProductRequestDto original = ProductRequestDto.builder()
+                .name("Wireless Mouse")
+                .sku("ELEC-MOUSE-001")
+                .price(new BigDecimal("25.00"))
+                .stockQuantity(50)
+                .categoryId(electronics.getId())
+                .build();
+
+        mockMvc.perform(post("/api/products")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(original)))
+                .andExpect(status().isCreated());
+
+        ProductRequestDto duplicate = ProductRequestDto.builder()
+                .name("A Different Mouse")
+                .sku("ELEC-MOUSE-001") // same SKU, different everything else
+                .price(new BigDecimal("30.00"))
+                .stockQuantity(10)
+                .categoryId(electronics.getId())
+                .build();
+
+        mockMvc.perform(post("/api/products")
+                        .contentType("application/json")
+                        .content(objectMapper.writeValueAsString(duplicate)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message", containsString("duplicate")));
+
+        assertThat(productRepository.count()).isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("creating with an unknown categoryId returns 404, not 400 or 500")
     void createWithUnknownCategoryReturnsNotFound() throws Exception {
         ProductRequestDto request = ProductRequestDto.builder()

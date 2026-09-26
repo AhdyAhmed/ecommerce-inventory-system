@@ -2,6 +2,7 @@ package com.portfolio.ecommerce.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -69,6 +70,23 @@ public class GlobalExceptionHandler {
         log.warn("409 (optimistic lock conflict) on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
         ErrorResponse body = baseResponse(HttpStatus.CONFLICT,
                 "This resource was modified concurrently by another request. Please retry.", request).build();
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    /**
+     * Catches DB-level unique-constraint violations that slip past service-layer
+     * checks - most commonly a duplicate {@code Product.sku}, but also a
+     * duplicate {@code Category}/{@code Tag} name. There's no service-layer
+     * pre-check for these (a pre-check-then-insert has its own race condition
+     * under concurrent requests), so the constraint itself is the source of
+     * truth and this handler is what turns its violation into a clean 409
+     * instead of a raw 500 with a leaked SQL exception message.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex, HttpServletRequest request) {
+        log.warn("409 (constraint violation) on {} {}: {}", request.getMethod(), request.getRequestURI(), ex.getMessage());
+        ErrorResponse body = baseResponse(HttpStatus.CONFLICT,
+                "This request conflicts with an existing record (e.g. a duplicate SKU or name).", request).build();
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 

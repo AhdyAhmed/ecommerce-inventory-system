@@ -412,6 +412,7 @@ a passing automated test (unit and/or integration, listed below) and a
 | **Negative order quantity** | Already rejected by Bean Validation (`@Positive` on `OrderItemRequestDto.quantity`, cascaded via `@Valid` on the list) - this never reaches the service layer at all. Day 12 adds the test that actually proves it, over real HTTP. | `OrderIntegrationTest.negativeQuantityReturnsValidationError` |
 | **Non-existent user** | `OrderServiceImpl.create()` looks up the user first, before touching any product, and throws `ResourceNotFoundException` -> `404`. Already covered since Day 9/10; listed here for completeness. | `OrderServiceImplTest.throwsWhenUserNotFound`, `OrderIntegrationTest.createOrderWithUnknownUserReturnsNotFound` |
 | **Concurrent stock decrement** | `Product.version` (`@Version`, added Day 2) makes Hibernate detect it when two requests read the same product row and both try to commit a change. `GlobalExceptionHandler` now turns that into a clean `409` instead of a raw `500`. **This is explicitly a stopgap, not a fix** - see the Design Decisions entry below for what's actually missing and why the real fix is out of scope for this project. | `GlobalExceptionHandlerTest.handlesOptimisticLockConflict` (verifies the mapping deterministically; see that test's Javadoc for why an actual concurrent-write reproduction isn't attempted here) |
+| **Duplicate SKU** *(found during the Day 14/15 review, not Day 12)* | There's no service-layer pre-check on `Product.sku` - a pre-check-then-insert has its own race condition under concurrent requests, so the DB's `unique` constraint is the actual source of truth. `GlobalExceptionHandler` catches `DataIntegrityViolationException` and maps it to a clean `409` instead of a raw `500` with a leaked SQL/constraint-name detail. | `GlobalExceptionHandlerTest.handlesDataIntegrityViolation`, `ProductIntegrationTest.createWithDuplicateSkuReturnsConflict` |
 
 ### Structured logging
 
@@ -687,7 +688,7 @@ handler branch including the two new ones from today.
 - [x] **Day 12** — Edge cases and structured logging
 - [x] **Day 13** — Architecture diagram + full README
 - [x] **Day 14** — Refactor pass
-- [ ] **Day 15** — Final polish, `v1.0` tag
+- [x] **Day 15** — Final polish, `v1.0` tag
 
 ## Design Decisions
 

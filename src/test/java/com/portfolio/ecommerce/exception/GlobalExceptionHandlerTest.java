@@ -98,6 +98,21 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
+    @DisplayName("DataIntegrityViolationException -> 409 with a safe message, not the raw SQL exception")
+    void handlesDataIntegrityViolation() {
+        org.springframework.dao.DataIntegrityViolationException ex =
+                new org.springframework.dao.DataIntegrityViolationException(
+                        "could not execute statement; SQL [n/a]; constraint [products_sku_key]");
+
+        ResponseEntity<ErrorResponse> response = handler.handleDataIntegrityViolation(ex, request);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(response.getBody().getMessage())
+                .contains("duplicate")
+                .doesNotContain("products_sku_key"); // client shouldn't see the raw constraint/SQL detail
+    }
+
+    @Test
     @DisplayName("MethodArgumentNotValidException -> 400 with one fieldErrors entry per violation")
     void handlesValidationFailure() {
         FieldError nameError = new FieldError("productRequestDto", "name", "Name is required");
